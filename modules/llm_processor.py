@@ -1,10 +1,13 @@
 # modules/llm_processor.py
-# Version 1.3: Updated default model to models/gemini-1.5-pro-latest, debug prints commented.
+# Version 1.4: Implemented exponential backoff and retries for API calls.
 
 import google.generativeai as genai
 import streamlit as st
 from typing import Optional, Dict, Any, List
+import time # Added for sleep in retries
+import random # Optional: for adding jitter to backoff
 
+# --- Module-level flag to check if configured ---
 _GEMINI_CONFIGURED = False
 _AVAILABLE_MODELS_CACHE: Optional[List[str]] = None
 
@@ -13,30 +16,24 @@ def configure_gemini(api_key: Optional[str], force_recheck_models: bool = False)
     if _GEMINI_CONFIGURED and not force_recheck_models and _AVAILABLE_MODELS_CACHE is not None:
         return True
     if not api_key:
-        # Error will be shown by app.py if key is missing for selected provider
-        return False
+        return False # Error displayed by app.py
     try:
         genai.configure(api_key=api_key)
         _GEMINI_CONFIGURED = True
 
         if _AVAILABLE_MODELS_CACHE is None or force_recheck_models:
-            # st.info("Attempting to list available Gemini models supporting 'generateContent'...")
-            # print("Attempting to list available Gemini models supporting 'generateContent'...")
+            # st.info("Attempting to list available Gemini models...") # Less verbose now
             current_available_models = []
             try:
                 for m in genai.list_models():
                     if 'generateContent' in m.supported_generation_methods:
                         current_available_models.append(m.name)
-                        # print(f"DEBUG: Found model: {m.name}")
-                        # st.caption(f"DEBUG: Found model: {m.name}")
                 _AVAILABLE_MODELS_CACHE = current_available_models
                 if not _AVAILABLE_MODELS_CACHE:
-                    st.warning("No Gemini models found supporting 'generateContent'. Check API key, project, and enabled services.")
+                    st.warning("No Gemini models found supporting 'generateContent'. Check API key/project/services.")
                     return False
-                # else:
-                    # st.success(f"Successfully listed {len(_AVAILABLE_MODELS_CACHE)} usable Gemini model(s).")
             except Exception as e_list_models:
-                st.error(f"Error listing Gemini models: {e_list_models}. API key might be invalid or service not enabled.")
+                st.error(f"Error listing Gemini models: {e_list_models}. API key/service issue likely.")
                 _AVAILABLE_MODELS_CACHE = []
                 _GEMINI_CONFIGURED = False
                 return False
@@ -46,41 +43,42 @@ def configure_gemini(api_key: Optional[str], force_recheck_models: bool = False)
         _GEMINI_CONFIGURED = False
         return False
 
+# --- Core LLM Interaction Function for Gemini with Retries ---
 def _call_gemini_api(
     model_name: str,
     prompt_parts: list,
     generation_config_args: Optional[Dict[str, Any]] = None,
     safety_settings_args: Optional[Dict[str, Any]] = None,
+    max_retries: int = 3,
+    initial_backoff_seconds: float = 2.0, # Start with 2 seconds
+    max_backoff_seconds: float = 60.0 # Cap backoff to 1 minute
 ) -> Optional[str]:
+
     if not _GEMINI_CONFIGURED:
         return "Gemini client not configured. API key might be missing, invalid, or model listing failed."
 
     validated_model_name = model_name
-    if _AVAILABLE_MODELS_CACHE is not None: # Only validate if cache is populated
+    if _AVAILABLE_MODELS_CACHE is not None:
         if model_name not in _AVAILABLE_MODELS_CACHE and f"models/{model_name}" not in _AVAILABLE_MODELS_CACHE:
-            # If model_name already starts with "models/", don't try to prefix it again.
             if not model_name.startswith("models/"):
                 prefixed_attempt = f"models/{model_name}"
                 if prefixed_attempt in _AVAILABLE_MODELS_CACHE:
                     validated_model_name = prefixed_attempt
                 else:
-                    st.error(f"Model '{model_name}' (or '{prefixed_attempt}') not found in available models. Available: {_AVAILABLE_MODELS_CACHE}")
+                    # st.error(f"Model '{model_name}' (or '{prefixed_attempt}') not found in available models.")
                     return f"LLM Error: Model '{model_name}' not available."
-            elif model_name not in _AVAILABLE_MODELS_CACHE: # Already prefixed, but still not found
-                 st.error(f"Model '{model_name}' not found in available models. Available: {_AVAILABLE_MODELS_CACHE}")
+            elif model_name not in _AVAILABLE_MODELS_CACHE:
+                 # st.error(f"Model '{model_name}' not found in available models.")
                  return f"LLM Error: Model '{model_name}' not available."
-        # If model_name is found directly, validated_model_name remains model_name
-    # If _AVAILABLE_MODELS_CACHE is None (e.g. direct test without full configure run), proceed with caution.
 
     try:
         model = genai.GenerativeModel(validated_model_name)
     except Exception as e_model_init:
-        st.error(f"Failed to initialize Gemini model '{validated_model_name}': {e_model_init}")
-        return f"LLM Error: Could not initialize model '{validated_model_name}'."
+        # st.error(f"Failed to initialize Gemini model '{validated_model_name}': {e_model_init}")
+        return f"LLM Error: Could not initialize model '{validated_model_name}': {e_model_init}"
 
     generation_config = genai.types.GenerationConfig(**(generation_config_args or {
-        "temperature": 0.3,
-        "max_output_tokens": 1024,
+        "temperature": 0.3, "max_output_tokens": 1024,
     }))
     safety_settings = safety_settings_args or [
         {"category": c, "threshold": "BLOCK_ONLY_HIGH"} for c in [
@@ -88,42 +86,71 @@ def _call_gemini_api(
             "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"
         ]
     ]
-    try:
-        response = model.generate_content(
-            prompt_parts,
-            generation_config=generation_config,
-            safety_settings=safety_settings,
-            stream=False
-        )
-        if not response.candidates:
-            reason_message = "LLM response was blocked or empty."
-            if response.prompt_feedback:
-                reason_message += f" Reason: {response.prompt_feedback.block_reason}."
-                if response.prompt_feedback.block_reason_message:
-                     reason_message += f" Message: {response.prompt_feedback.block_reason_message}"
-                if response.prompt_feedback.safety_ratings:
-                    for rating in response.prompt_feedback.safety_ratings:
-                        if rating.blocked:
-                            reason_message += f" Blocked by safety category: {rating.category}."
-            # st.warning(reason_message) # Let app.py handle UI display for these errors
-            return reason_message
-        return response.text
-    except Exception as e:
-        # st.error(f"Error during Gemini API call for model '{validated_model_name}': {e} (Type: {e.__class__.__name__})")
-        return f"LLM Error during API call for '{validated_model_name}': {e.__class__.__name__} - {e}"
 
+    current_retry = 0
+    current_backoff = initial_backoff_seconds
 
+    while current_retry <= max_retries:
+        try:
+            response = model.generate_content(
+                prompt_parts,
+                generation_config=generation_config,
+                safety_settings=safety_settings,
+                stream=False
+            )
+            if not response.candidates:
+                reason_message = "LLM response was blocked or empty."
+                # ... (construct detailed reason_message as before) ...
+                if response.prompt_feedback:
+                    reason_message += f" Reason: {response.prompt_feedback.block_reason}."
+                    if response.prompt_feedback.block_reason_message:
+                        reason_message += f" Message: {response.prompt_feedback.block_reason_message}"
+                    if response.prompt_feedback.safety_ratings:
+                        for rating in response.prompt_feedback.safety_ratings:
+                            if rating.blocked:
+                                reason_message += f" Blocked by safety category: {rating.category}."
+                # Content blocks are usually not retried as they are deterministic based on content/safety.
+                return reason_message
+            return response.text
+
+        except Exception as e:
+            error_str = str(e).lower()
+            # More specific check for google.api_core.exceptions.ResourceExhausted or similar gRPC errors
+            is_rate_limit_error = (
+                "429" in error_str or
+                "resourceexhausted" in error_str.replace(" ", "") or
+                "resource exhausted" in error_str or
+                "rate" in error_str and "limit" in error_str or
+                (hasattr(e, 'details') and callable(e.details) and "Quota" in e.details()) or # For some gRPC errors
+                (hasattr(e, 'code') and callable(e.code) and e.code().value == 8) # gRPC status code 8 is RESOURCE_EXHAUSTED
+            )
+
+            if is_rate_limit_error and current_retry < max_retries:
+                current_retry += 1
+                # Log this to the Streamlit UI log via app.py if possible, or print for now
+                # For now, we'll return a string that app.py can log or handle
+                retry_log_message = f"LLM Rate limit for '{validated_model_name}'. Retrying in {current_backoff:.1f}s (Attempt {current_retry}/{max_retries})."
+                print(retry_log_message) # For console debugging
+                # We cannot directly use st.caption here as this module should be UI agnostic
+                time.sleep(current_backoff)
+                current_backoff = min(current_backoff * 2 + random.uniform(0, 0.5), max_backoff_seconds) # Exponential backoff with jitter, capped
+            else: # Not a retriable error or max retries reached
+                return f"LLM Error for '{validated_model_name}': {e.__class__.__name__} - {e}"
+    
+    return f"LLM Error: Max retries ({max_retries}) reached for '{validated_model_name}' due to persistent rate limiting."
+
+# --- Text Truncation (Basic) ---
 def _truncate_text_for_gemini(text: str, model_name: str, max_input_chars: int) -> str:
     effective_max_chars = max_input_chars
     if len(text) > effective_max_chars:
-        # st.caption(f"LLM Input: Text truncated from {len(text)} to {effective_max_chars} chars for {model_name}.")
         return text[:effective_max_chars]
     return text
 
+# --- Public Functions for App ---
 def generate_summary(
     text_content: Optional[str],
     api_key: Optional[str],
-    model_name: str = "models/gemini-1.5-pro-latest", # Updated default
+    model_name: str = "models/gemini-1.5-pro-latest",
     max_input_chars: int = 750000
 ) -> Optional[str]:
     if not text_content:
@@ -147,7 +174,7 @@ def extract_specific_information(
     text_content: Optional[str],
     extraction_query: str,
     api_key: Optional[str],
-    model_name: str = "models/gemini-1.5-pro-latest", # Updated default
+    model_name: str = "models/gemini-1.5-pro-latest",
     max_input_chars: int = 750000
 ) -> Optional[str]:
     if not text_content:
@@ -169,9 +196,10 @@ def extract_specific_information(
     )
     return _call_gemini_api(model_name, [prompt], generation_config_args={"max_output_tokens": 600})
 
+# --- if __name__ == '__main__': block for testing (kept similar to v1.3) ---
 if __name__ == '__main__':
     st.set_page_config(layout="wide")
-    st.title("LLM Processor Module Test (Google Gemini v1.3)")
+    st.title("LLM Processor Module Test (Google Gemini v1.4 - Retries)")
     GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password")
     MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-pro-latest")
     configured_for_test = False
@@ -211,4 +239,5 @@ if __name__ == '__main__':
                 st.warning("Please enter an extraction query.")
     else:
         st.warning("Gemini not configured for testing.")
+
 # end of modules/llm_processor.py
