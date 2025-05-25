@@ -6,8 +6,7 @@ requests
 beautifulsoup4
 trafilatura
 gspread
-oauth2client # Still sometimes a dependency for gspread or older examples, good to have
-openai
-python-dotenv # Optional: for local development if not using st.secrets exclusively
-# tiktoken # Good to add when you implement token counting for LLMs
-google-generativeai
+oauth2client
+# openai # Keep if you want the option to switch back via secrets
+google-generativeai # Added for Gemini
+python-dotenv
