@@ -1,0 +1,12 @@
+streamlit
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+requests
+beautifulsoup4
+trafilatura
+gspread
+oauth2client # Still sometimes a dependency for gspread or older examples, good to have
+openai
+python-dotenv # Optional: for local development if not using st.secrets exclusively
+# tiktoken # Good to add when you implement token counting for LLMs
