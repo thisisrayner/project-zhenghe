@@ -10,3 +10,5 @@ oauth2client
 # openai # Keep if you want the option to switch back via secrets
 google-generativeai # Added for Gemini
 python-dotenv
+pandas
+openpyxl
