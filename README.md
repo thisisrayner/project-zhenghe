@@ -137,4 +137,41 @@ Once the setup is complete, run the Streamlit application:
 ```bash
 streamlit run app.py
 
+our default web browser should open to the application (usually http://localhost:8501).
+Usage
+
+    Navigate to the application URL.
+
+    Enter keywords in the sidebar.
+
+    Configure the "Number of successfully scraped results per keyword".
+
+    Optionally, enable LLM summarization and/or provide a query for specific information extraction using the configured LLM provider (default is Google Gemini).
+
+    Click the "🚀 Start Search & Analysis" button.
+
+    View the progress, individual item results (including metadata and LLM insights), and the automatically generated consolidated overview in the main panel.
+
+    The processing log can be expanded to see detailed steps.
+
+    If Google Sheets integration is configured successfully, a batch summary row followed by individual item data rows will be written to your specified sheet.
+
+    A "📥 Download Results as Excel" button will appear below the results, allowing you to download an Excel file with "Item Details" and "Consolidated Summary" sheets.
+
+Future API Layer Plan
+
+The modular design of this project (modules/ directory) is intended to support the future development of a separate API layer (e.g., using FastAPI or Flask). This API would:
+
+    Reuse the core logic functions from the modules/ directory.
+
+    Provide HTTP endpoints for programmatic access to the tool's capabilities.
+
+    Allow integration with tools like n8n, Make.com, or custom scripts.
+
+Contributing
+
+[Details on how to contribute to the project, if applicable.]
+License
+
+[Specify the license for your project, e.g., MIT License.]
     
