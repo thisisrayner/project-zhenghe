@@ -20,7 +20,7 @@ class LLMConfig:
     openai_model_extract: str = "gpt-3.5-turbo"
     # Google Gemini specific
     google_gemini_api_key: str | None = None
-    google_gemini_model: str = "models/gemini-1.5-pro-latest" # Updated default
+    google_gemini_model: str = "models/gemini-1.5-flash-latest" # Updated default
 
     max_input_chars: int = 750000 # Generous default for Gemini 1.5 Pro
 
