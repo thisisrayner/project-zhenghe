@@ -10,3 +10,4 @@ oauth2client # Still sometimes a dependency for gspread or older examples, good 
 openai
 python-dotenv # Optional: for local development if not using st.secrets exclusively
 # tiktoken # Good to add when you implement token counting for LLMs
+google-generativeai
