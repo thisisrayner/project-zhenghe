@@ -1,5 +1,5 @@
 # app.py
-# Version 1.6.2: Changed LLM provider display name in results to "(LLM)".
+# Version 1.6.3: Commented out most DEBUG print/write statements for cleaner UI.
 
 import streamlit as st
 from modules import config, search_engine, scraper, llm_processor, data_storage
@@ -10,32 +10,40 @@ st.set_page_config(page_title="Keyword Search & Analysis Tool", page_icon="🔎"
 
 # --- Load Configuration ---
 cfg = config.load_config()
-if not cfg: st.error("Critical configuration failed."); st.stop()
+if not cfg: 
+    st.error("CRITICAL: Configuration failed to load. Application cannot proceed.")
+    st.stop()
+# else:
+    # st.success("DEBUG: Configuration loaded successfully.") # Optional: remove
 
 # --- Session State Initialization ---
 default_session_state = {
     'processing_log': [], 'results_data': [], 'last_keywords': "",
     'last_extract_query': "", 'consolidated_summary_text': None,
-    'gs_worksheet': None, 'sheet_writing_enabled': False,
+    'gs_worksheet': None, 
+    'sheet_writing_enabled': False,
     'sheet_connection_attempted_this_session': False
 }
 for key, default_value in default_session_state.items():
-    if key not in st.session_state: st.session_state[key] = default_value
+    if key not in st.session_state: 
+        st.session_state[key] = default_value
 
 # --- Google Sheets Setup ---
 if not st.session_state.sheet_connection_attempted_this_session and \
    (cfg.gsheets.service_account_info and (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name)):
     st.session_state.sheet_connection_attempted_this_session = True
     st.session_state.sheet_writing_enabled = True
+    # st.sidebar.info("Attempting to connect to Google Sheets...") # Less verbose
     st.session_state.gs_worksheet = data_storage.get_gspread_worksheet(
         cfg.gsheets.service_account_info, cfg.gsheets.spreadsheet_id,
         cfg.gsheets.spreadsheet_name, cfg.gsheets.worksheet_name
     )
     if st.session_state.gs_worksheet:
         data_storage.ensure_master_header(st.session_state.gs_worksheet)
+        # st.sidebar.success("Google Sheets connection successful.") # Less verbose
     else:
         st.session_state.sheet_writing_enabled = False
-        st.sidebar.error("Google Sheets connection failed.") # Moved error to sidebar
+        st.sidebar.error("Google Sheets connection failed. Check logs/secrets if writing is desired.")
 elif not (cfg.gsheets.service_account_info and (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name)):
     st.session_state.sheet_writing_enabled = False
 
@@ -62,11 +70,10 @@ with st.sidebar:
     llm_extract_query_input_val = st.text_input("Specific info to extract with LLM:", value=st.session_state.last_extract_query, placeholder="e.g., Key technologies mentioned", key="llm_extract_text_input", disabled=not llm_key_available)
     
     if not st.session_state.sheet_writing_enabled and \
-       (cfg.gsheets.service_account_info or cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name): # Only show warning if config was present but failed
-        st.sidebar.warning("⚠️ Google Sheets connection failed or not configured correctly.")
-    elif not st.session_state.sheet_writing_enabled: # Config was missing entirely
-         st.sidebar.caption("Google Sheets integration not configured.")
-
+       (cfg.gsheets.service_account_info or cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name):
+        st.sidebar.warning("⚠️ Google Sheets connection failed or not configured correctly. Results will not be saved to sheet.")
+    elif not st.session_state.sheet_writing_enabled:
+         st.sidebar.caption("Google Sheets integration not configured (no secrets found).")
 
     start_button_val = st.button("🚀 Start Search & Analysis", type="primary", use_container_width=True)
 
@@ -84,6 +91,9 @@ if start_button_val:
 
     if not keywords_list_val_runtime: st.sidebar.error("Please enter at least one keyword."); st.stop()
 
+    # ... (Main processing loop from v1.6.1 - this populates st.session_state.results_data) ...
+    # For brevity, the detailed loop is omitted here but it should be identical to app.py v1.6.1.
+    # The key part is that st.session_state.results_data is populated correctly.
     oversample_factor = 2.0; max_google_fetch_per_keyword = 10
     est_urls_to_fetch_per_keyword = min(max_google_fetch_per_keyword, int(num_results_wanted_per_keyword * oversample_factor))
     if est_urls_to_fetch_per_keyword < num_results_wanted_per_keyword: est_urls_to_fetch_per_keyword = num_results_wanted_per_keyword
@@ -93,8 +103,7 @@ if start_button_val:
         if llm_extract_query_input_val.strip(): total_llm_tasks_per_good_scrape +=1
     total_major_steps_for_progress = (len(keywords_list_val_runtime) * est_urls_to_fetch_per_keyword) + (len(keywords_list_val_runtime) * num_results_wanted_per_keyword * total_llm_tasks_per_good_scrape)
     current_major_step_count = 0; progress_bar_placeholder = st.empty()
-
-    for keyword_val in keywords_list_val_runtime:
+    for keyword_val in keywords_list_val_runtime: # Main Processing Loop (Simplified for this paste)
         st.session_state.processing_log.append(f"\n🔎 Processing keyword: {keyword_val}")
         with progress_bar_placeholder: st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=f"Starting keyword: {keyword_val}...")
         if not (cfg.google_search.api_key and cfg.google_search.cse_id): st.error("Google Search API Key or CSE ID not configured."); st.session_state.processing_log.append(f"  ❌ ERROR: Halting for '{keyword_val}'."); st.stop()
@@ -160,7 +169,7 @@ if start_button_val:
         st.session_state.consolidated_summary_text = consolidated_summary_text_for_batch
 
     if st.session_state.sheet_writing_enabled and st.session_state.gs_worksheet:
-        if st.session_state.results_data or st.session_state.consolidated_summary_text:
+        if st.session_state.results_data or st.session_state.consolidated_summary_text: # Check if any data to write
             batch_process_timestamp_for_sheet = time.strftime("%Y-%m-%d %H:%M:%S")
             st.session_state.processing_log.append(f"\n💾 Writing batch data (started {batch_process_timestamp_for_sheet}) to Google Sheets...")
             extraction_query_for_sheet = st.session_state.last_extract_query if llm_extract_query_input_val.strip() else None
@@ -173,8 +182,8 @@ if start_button_val:
             )
             if write_successful: st.session_state.processing_log.append(f"  Batch data written to Google Sheets.")
             else: st.session_state.processing_log.append(f"  ❌ Failed to write batch data to Google Sheets.")
-    elif st.session_state.results_data:
-        st.session_state.processing_log.append("\n⚠️ Google Sheets writing is disabled or not configured.")
+    elif st.session_state.results_data: # Only log warning if there was data but sheets wasn't enabled
+        st.session_state.processing_log.append("\n⚠️ Google Sheets writing is disabled or not configured. Data not saved to sheet.")
 
     if st.session_state.results_data or st.session_state.consolidated_summary_text : st.success("All processing complete!")
     else: st.warning("Processing complete, but no data was generated.")
@@ -198,17 +207,12 @@ if st.session_state.results_data:
                 if item_val.get('scraped_main_text'):
                     with st.popover("View Main Text", use_container_width=True): st.text_area(f"Main Text", value=item_val['scraped_main_text'], height=400, key=f"main_text_popover_{i}", disabled=True)
                 else: st.caption("No main text was extracted or deemed usable.")
-                
                 if item_val.get("llm_summary") or item_val.get("llm_extracted_info"):
                     st.markdown("**LLM Insights:**")
                     if item_val.get("llm_summary"):
-                        with st.container(border=True):
-                            st.markdown(f"**Summary (LLM):**") # CORRECTED
-                            st.markdown(item_val["llm_summary"])
+                        with st.container(border=True): st.markdown(f"**Summary (LLM):**"); st.markdown(item_val["llm_summary"])
                     if item_val.get("llm_extracted_info"):
-                        with st.container(border=True):
-                            st.markdown(f"**Extracted Info (LLM) for '{st.session_state.last_extract_query}':**") # CORRECTED
-                            st.markdown(item_val["llm_extracted_info"])
+                        with st.container(border=True): st.markdown(f"**Extracted Info (LLM) for '{st.session_state.last_extract_query}':**"); st.markdown(item_val["llm_extracted_info"])
                 st.caption(f"Timestamp: {item_val.get('timestamp')}")
 
 # --- Display Processing Log ---
@@ -220,6 +224,6 @@ if st.session_state.processing_log:
 
 # --- Footer for Version ---
 st.markdown("---")
-st.caption("Keyword Search & Analysis Tool v1.6.2")
+st.caption("Keyword Search & Analysis Tool v1.6.3") # Updated version
 
 # end of app.py
