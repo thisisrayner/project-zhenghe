@@ -20,7 +20,7 @@ class LLMConfig: # Generic LLM Config, can hold specific provider configs
     openai_model_extract: str = "gpt-3.5-turbo"
     # Google Gemini specific (can be None if not using Gemini)
     google_gemini_api_key: str | None = None
-    google_gemini_model: str = "gemini-1.0-pro" # Or "gemini-1.5-pro-latest" etc.
+    google_gemini_model: str = "gemini-1.5-pro-latest" # Or "gemini-1.5-pro-latest" etc.
 
     max_input_chars: int = 12000 # Increased default for potentially larger Gemini context
 
