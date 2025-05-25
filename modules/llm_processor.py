@@ -1,62 +1,51 @@
 # modules/llm_processor.py
-# Version 1.2: Targeting Gemini 1.5 Pro, includes model listing debug.
+# Version 1.3: Updated default model to models/gemini-1.5-pro-latest, debug prints commented.
 
 import google.generativeai as genai
 import streamlit as st
 from typing import Optional, Dict, Any, List
 
-# --- Module-level flag to check if configured ---
 _GEMINI_CONFIGURED = False
-_AVAILABLE_MODELS_CACHE: Optional[List[str]] = None # Cache for available models
+_AVAILABLE_MODELS_CACHE: Optional[List[str]] = None
 
 def configure_gemini(api_key: Optional[str], force_recheck_models: bool = False) -> bool:
-    """
-    Configures the Google Generative AI client with the API key.
-    Lists available models supporting 'generateContent' if not already cached or forced.
-    Returns True if configuration was successful, False otherwise.
-    """
     global _GEMINI_CONFIGURED, _AVAILABLE_MODELS_CACHE
     if _GEMINI_CONFIGURED and not force_recheck_models and _AVAILABLE_MODELS_CACHE is not None:
-        return True # Already configured and models checked (unless forced)
+        return True
     if not api_key:
-        st.error("Google Gemini API Key not provided for configuration.")
+        # Error will be shown by app.py if key is missing for selected provider
         return False
     try:
         genai.configure(api_key=api_key)
-        _GEMINI_CONFIGURED = True # Mark as configured even before model check for basic API key validation
+        _GEMINI_CONFIGURED = True
 
-        # --- List and Cache Available Models ---
         if _AVAILABLE_MODELS_CACHE is None or force_recheck_models:
-            st.info("Attempting to list available Gemini models supporting 'generateContent'...")
-            print("Attempting to list available Gemini models supporting 'generateContent'...")
+            # st.info("Attempting to list available Gemini models supporting 'generateContent'...")
+            # print("Attempting to list available Gemini models supporting 'generateContent'...")
             current_available_models = []
             try:
                 for m in genai.list_models():
                     if 'generateContent' in m.supported_generation_methods:
                         current_available_models.append(m.name)
-                        print(f"DEBUG: Found model: {m.name}")
-                        st.caption(f"DEBUG: Found model: {m.name}") # Show in UI for debugging
+                        # print(f"DEBUG: Found model: {m.name}")
+                        # st.caption(f"DEBUG: Found model: {m.name}")
                 _AVAILABLE_MODELS_CACHE = current_available_models
                 if not _AVAILABLE_MODELS_CACHE:
                     st.warning("No Gemini models found supporting 'generateContent'. Check API key, project, and enabled services.")
-                    # _GEMINI_CONFIGURED = False # Optionally mark as not truly configured if no usable models
-                    return False # Cannot proceed if no models
-                else:
-                    st.success(f"Successfully listed {len(_AVAILABLE_MODELS_CACHE)} usable Gemini model(s).")
-
+                    return False
+                # else:
+                    # st.success(f"Successfully listed {len(_AVAILABLE_MODELS_CACHE)} usable Gemini model(s).")
             except Exception as e_list_models:
                 st.error(f"Error listing Gemini models: {e_list_models}. API key might be invalid or service not enabled.")
-                _AVAILABLE_MODELS_CACHE = [] # Ensure it's not None if an error occurred
-                _GEMINI_CONFIGURED = False # Configuration failed if models can't be listed
+                _AVAILABLE_MODELS_CACHE = []
+                _GEMINI_CONFIGURED = False
                 return False
-        return True # Configured (API key set) and models checked/cached
-
+        return True
     except Exception as e_configure:
         st.error(f"Failed to configure Google Gemini client with API key: {e_configure}")
         _GEMINI_CONFIGURED = False
         return False
 
-# --- Core LLM Interaction Function for Gemini ---
 def _call_gemini_api(
     model_name: str,
     prompt_parts: list,
@@ -65,38 +54,40 @@ def _call_gemini_api(
 ) -> Optional[str]:
     if not _GEMINI_CONFIGURED:
         return "Gemini client not configured. API key might be missing, invalid, or model listing failed."
-    
-    # Validate if the requested model_name is in the list of known available models
-    if _AVAILABLE_MODELS_CACHE is not None and model_name not in _AVAILABLE_MODELS_CACHE and f"models/{model_name}" not in _AVAILABLE_MODELS_CACHE:
-        alt_model_name = f"models/{model_name}" # Sometimes the prefix is needed
-        if alt_model_name not in _AVAILABLE_MODELS_CACHE:
-            st.error(f"Model '{model_name}' (or '{alt_model_name}') not found in the list of available models for your API key. Available: {_AVAILABLE_MODELS_CACHE}")
-            return f"LLM Error: Model '{model_name}' not available."
-        model_name = alt_model_name # Use the prefixed name if that's what was found
+
+    validated_model_name = model_name
+    if _AVAILABLE_MODELS_CACHE is not None: # Only validate if cache is populated
+        if model_name not in _AVAILABLE_MODELS_CACHE and f"models/{model_name}" not in _AVAILABLE_MODELS_CACHE:
+            # If model_name already starts with "models/", don't try to prefix it again.
+            if not model_name.startswith("models/"):
+                prefixed_attempt = f"models/{model_name}"
+                if prefixed_attempt in _AVAILABLE_MODELS_CACHE:
+                    validated_model_name = prefixed_attempt
+                else:
+                    st.error(f"Model '{model_name}' (or '{prefixed_attempt}') not found in available models. Available: {_AVAILABLE_MODELS_CACHE}")
+                    return f"LLM Error: Model '{model_name}' not available."
+            elif model_name not in _AVAILABLE_MODELS_CACHE: # Already prefixed, but still not found
+                 st.error(f"Model '{model_name}' not found in available models. Available: {_AVAILABLE_MODELS_CACHE}")
+                 return f"LLM Error: Model '{model_name}' not available."
+        # If model_name is found directly, validated_model_name remains model_name
+    # If _AVAILABLE_MODELS_CACHE is None (e.g. direct test without full configure run), proceed with caution.
 
     try:
-        model = genai.GenerativeModel(model_name)
+        model = genai.GenerativeModel(validated_model_name)
     except Exception as e_model_init:
-        st.error(f"Failed to initialize Gemini model '{model_name}': {e_model_init}")
-        return f"LLM Error: Could not initialize model '{model_name}'."
+        st.error(f"Failed to initialize Gemini model '{validated_model_name}': {e_model_init}")
+        return f"LLM Error: Could not initialize model '{validated_model_name}'."
 
     generation_config = genai.types.GenerationConfig(**(generation_config_args or {
-        "temperature": 0.3, # Lower for more factual, higher for creative
-        "max_output_tokens": 1024, # Gemini 1.5 can output more; adjust as needed
+        "temperature": 0.3,
+        "max_output_tokens": 1024,
     }))
-
-    # Adjust safety settings - for web content, you might need to be less restrictive
-    # Default is often BLOCK_MEDIUM_AND_ABOVE for all.
-    # BLOCK_ONLY_HIGH might be a better starting point for general web summarization.
     safety_settings = safety_settings_args or [
         {"category": c, "threshold": "BLOCK_ONLY_HIGH"} for c in [
             "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
             "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"
         ]
     ]
-    # To be very permissive (USE WITH EXTREME CAUTION AND UNDERSTAND RISKS):
-    # safety_settings = [{"category": c, "threshold": "BLOCK_NONE"} for c in [...] ]
-
     try:
         response = model.generate_content(
             prompt_parts,
@@ -104,7 +95,6 @@ def _call_gemini_api(
             safety_settings=safety_settings,
             stream=False
         )
-
         if not response.candidates:
             reason_message = "LLM response was blocked or empty."
             if response.prompt_feedback:
@@ -113,42 +103,33 @@ def _call_gemini_api(
                      reason_message += f" Message: {response.prompt_feedback.block_reason_message}"
                 if response.prompt_feedback.safety_ratings:
                     for rating in response.prompt_feedback.safety_ratings:
-                        if rating.blocked: # This attribute tells if this specific category caused a block
+                        if rating.blocked:
                             reason_message += f" Blocked by safety category: {rating.category}."
-            st.warning(reason_message)
+            # st.warning(reason_message) # Let app.py handle UI display for these errors
             return reason_message
-
         return response.text
     except Exception as e:
-        st.error(f"Error during Gemini API call for model '{model_name}': {e} (Type: {e.__class__.__name__})")
-        return f"LLM Error during API call ({e.__class__.__name__})"
+        # st.error(f"Error during Gemini API call for model '{validated_model_name}': {e} (Type: {e.__class__.__name__})")
+        return f"LLM Error during API call for '{validated_model_name}': {e.__class__.__name__} - {e}"
 
-# --- Text Truncation (Basic) ---
+
 def _truncate_text_for_gemini(text: str, model_name: str, max_input_chars: int) -> str:
-    # Gemini 1.5 Pro has a 1M token context. This char limit is a practical app limit.
-    # 1M tokens is roughly 4M characters.
-    # A more robust solution would use client-side token counting if available for Gemini.
     effective_max_chars = max_input_chars
-    # if "1.5-pro" in model_name: # Example: be more generous for 1.5 pro
-    #     effective_max_chars = min(max_input_chars, 800000) # Cap at ~200k tokens worth of chars
-
     if len(text) > effective_max_chars:
-        st.caption(f"LLM Input: Text truncated from {len(text)} to {effective_max_chars} characters for {model_name}.")
+        # st.caption(f"LLM Input: Text truncated from {len(text)} to {effective_max_chars} chars for {model_name}.")
         return text[:effective_max_chars]
     return text
 
-# --- Public Functions for App ---
 def generate_summary(
     text_content: Optional[str],
     api_key: Optional[str],
-    model_name: str = "gemini-1.5-pro-latest", # Default to Gemini 1.5 Pro
-    max_input_chars: int = 750000 # Generous limit for Gemini 1.5 Pro (approx <200k tokens)
+    model_name: str = "models/gemini-1.5-pro-latest", # Updated default
+    max_input_chars: int = 750000
 ) -> Optional[str]:
     if not text_content:
         return "No text content provided for summary."
-    if not configure_gemini(api_key): # Ensures API key is set and models were checked
+    if not configure_gemini(api_key):
         return "Gemini LLM not configured for summary (API key or model issue)."
-
     truncated_text = _truncate_text_for_gemini(text_content, model_name, max_input_chars)
     prompt = (
         "You are an expert assistant tasked with creating concise, informative summaries of web page content.\n"
@@ -162,12 +143,11 @@ def generate_summary(
     )
     return _call_gemini_api(model_name, [prompt], generation_config_args={"max_output_tokens": 300})
 
-
 def extract_specific_information(
     text_content: Optional[str],
     extraction_query: str,
     api_key: Optional[str],
-    model_name: str = "gemini-1.5-pro-latest", # Default to Gemini 1.5 Pro
+    model_name: str = "models/gemini-1.5-pro-latest", # Updated default
     max_input_chars: int = 750000
 ) -> Optional[str]:
     if not text_content:
@@ -176,7 +156,6 @@ def extract_specific_information(
         return "No extraction query provided."
     if not configure_gemini(api_key):
         return "Gemini LLM not configured for extraction (API key or model issue)."
-
     truncated_text = _truncate_text_for_gemini(text_content, model_name, max_input_chars)
     prompt = (
         "You are a highly skilled information extraction assistant.\n"
@@ -190,28 +169,22 @@ def extract_specific_information(
     )
     return _call_gemini_api(model_name, [prompt], generation_config_args={"max_output_tokens": 600})
 
-
 if __name__ == '__main__':
     st.set_page_config(layout="wide")
-    st.title("LLM Processor Module Test (Google Gemini v1.2 - 1.5 Pro Focus)")
-
-    # This test part assumes your config.py is in the same directory or Python path
-    # For modular structure, it's better to run app.py and test through it.
-    # However, for isolated module testing:
-    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing (or ensure it's in secrets if config load works):", type="password")
-    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "gemini-1.5-pro-latest") # Or "gemini-pro"
-
+    st.title("LLM Processor Module Test (Google Gemini v1.3)")
+    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password")
+    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-pro-latest")
     configured_for_test = False
     if GEMINI_API_KEY_TEST:
-        if configure_gemini(GEMINI_API_KEY_TEST, force_recheck_models=True): # Force model check for direct test
-            st.success(f"Gemini configured for testing with model: {MODEL_NAME_TEST}. Available models (check console/UI for DEBUG): {_AVAILABLE_MODELS_CACHE}")
+        if configure_gemini(GEMINI_API_KEY_TEST, force_recheck_models=True):
+            st.success(f"Gemini configured for testing with model: {MODEL_NAME_TEST}.")
+            if _AVAILABLE_MODELS_CACHE:
+                 st.write("Available Models (first 5):", _AVAILABLE_MODELS_CACHE[:5])
             configured_for_test = True
         else:
-            st.error("Failed to configure Gemini for testing. Check API key and console for errors.")
+            st.error("Failed to configure Gemini for testing.")
     else:
         st.info("Enter Gemini API Key to enable tests.")
-
-
     sample_text_content = st.text_area("Sample Text for LLM:", """
     The Alpha Centauri system is the closest star system to our Solar System, located at a distance of 4.37 light-years.
     It consists of three stars: Alpha Centauri A (Rigil Kentaurus), Alpha Centauri B (Toliman), and the closest star,
@@ -219,7 +192,6 @@ if __name__ == '__main__':
     discovered in 2016. This exoplanet orbits within the habitable zone of Proxima Centauri. Alpha Centauri A and B
     are Sun-like stars orbiting each other closely.
     """, height=200)
-
     if configured_for_test:
         st.subheader("Test Summary Generation (Gemini)")
         if st.button("Generate Summary (Gemini)"):
@@ -227,7 +199,6 @@ if __name__ == '__main__':
                 summary = generate_summary(sample_text_content, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
             st.markdown("**Summary:**")
             st.write(summary)
-
         st.subheader("Test Specific Information Extraction (Gemini)")
         extraction_q = st.text_input("Extraction Query (Gemini):", "Distance to Alpha Centauri and name of Proxima Centauri's exoplanet")
         if st.button("Extract Information (Gemini)"):
@@ -239,6 +210,5 @@ if __name__ == '__main__':
             else:
                 st.warning("Please enter an extraction query.")
     else:
-        st.warning("Gemini not configured for testing. Please provide API key.")
-
+        st.warning("Gemini not configured for testing.")
 # end of modules/llm_processor.py
