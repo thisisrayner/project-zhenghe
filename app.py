@@ -1,5 +1,6 @@
 # app.py
-# Version 1.6.5: Added debugging for consolidated summary input.
+# Version 1.6.6: Corrected SyntaxError in LLM insights display block (again).
+# Includes NameError fix and Download to Excel feature.
 
 import streamlit as st
 from modules import config, search_engine, scraper, llm_processor, data_storage
@@ -7,11 +8,14 @@ import time
 import pandas as pd
 from io import BytesIO
 
-# ... (Keep Page Config, Config Loading, Session State Init, Sheets Setup, UI Layout as in v1.6.4) ...
 # --- Page Configuration ---
 st.set_page_config(page_title="Keyword Search & Analysis Tool", page_icon="🔎", layout="wide")
+
+# --- Load Configuration ---
 cfg = config.load_config()
 if not cfg: st.error("Critical configuration failed."); st.stop()
+
+# --- Session State Initialization ---
 default_session_state = {
     'processing_log': [], 'results_data': [], 'last_keywords': "",
     'last_extract_query': "", 'consolidated_summary_text': None,
@@ -20,16 +24,21 @@ default_session_state = {
 }
 for key, default_value in default_session_state.items():
     if key not in st.session_state: st.session_state[key] = default_value
+
+# --- Google Sheets Setup ---
 if not st.session_state.sheet_connection_attempted_this_session and \
    (cfg.gsheets.service_account_info and (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name)):
     st.session_state.sheet_connection_attempted_this_session = True; st.session_state.sheet_writing_enabled = True
     st.session_state.gs_worksheet = data_storage.get_gspread_worksheet(cfg.gsheets.service_account_info, cfg.gsheets.spreadsheet_id, cfg.gsheets.spreadsheet_name, cfg.gsheets.worksheet_name)
     if st.session_state.gs_worksheet: data_storage.ensure_master_header(st.session_state.gs_worksheet)
-    else: st.session_state.sheet_writing_enabled = False; # st.sidebar.error("Google Sheets connection failed.") # Error shown by data_storage
+    else: st.session_state.sheet_writing_enabled = False; # Error shown by data_storage
 elif not (cfg.gsheets.service_account_info and (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name)):
     st.session_state.sheet_writing_enabled = False
+
+# --- UI Layout ---
 st.title("Keyword Search & Analysis Tool 🔎📝")
-# ... (Sidebar UI - same as 1.6.4) ...
+st.markdown("Enter keywords, configure options, and let the tool gather insights for you.")
+
 with st.sidebar:
     st.header("⚙️ Configuration"); st.subheader("Search Parameters")
     keywords_input_val = st.text_area("Keywords (one per line or comma-separated):", value=st.session_state.last_keywords, height=150, key="keywords_text_area")
@@ -44,8 +53,11 @@ with st.sidebar:
     elif not st.session_state.sheet_writing_enabled: st.sidebar.caption("Google Sheets integration not configured.")
     start_button_val = st.button("🚀 Start Search & Analysis", type="primary", use_container_width=True)
 
-results_container = st.container(); log_container = st.container()
-def to_excel(df_item_details, df_consolidated_summary=None): # Keep to_excel function
+# --- Main Area for Results & Log ---
+results_container = st.container()
+log_container = st.container()
+
+def to_excel(df_item_details, df_consolidated_summary=None):
     output = BytesIO();
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_item_details.to_excel(writer, index=False, sheet_name='Item Details')
@@ -53,8 +65,6 @@ def to_excel(df_item_details, df_consolidated_summary=None): # Keep to_excel fun
     return output.getvalue()
 
 if start_button_val:
-    # ... (Main processing loop from v1.6.4 - populates st.session_state.results_data) ...
-    # For brevity, this detailed loop is omitted here but should be identical.
     st.session_state.processing_log = ["Processing started..."]; st.session_state.results_data = []; st.session_state.consolidated_summary_text = None
     st.session_state.last_keywords = keywords_input_val; st.session_state.last_extract_query = llm_extract_query_input_val
     keywords_list_val_runtime = [k.strip() for k in keywords_input_val.replace(',', '\n').split('\n') if k.strip()]
@@ -67,7 +77,7 @@ if start_button_val:
         if llm_extract_query_input_val.strip(): total_llm_tasks_per_good_scrape +=1
     total_major_steps_for_progress = (len(keywords_list_val_runtime) * est_urls_to_fetch_per_keyword) + (len(keywords_list_val_runtime) * num_results_wanted_per_keyword * total_llm_tasks_per_good_scrape)
     current_major_step_count = 0; progress_bar_placeholder = st.empty()
-    for keyword_val in keywords_list_val_runtime: # Main Processing Loop
+    for keyword_val in keywords_list_val_runtime:
         st.session_state.processing_log.append(f"\n🔎 Processing keyword: {keyword_val}")
         with progress_bar_placeholder: st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=f"Starting keyword: {keyword_val}...")
         if not (cfg.google_search.api_key and cfg.google_search.cse_id): st.error("Google Search API Key or CSE ID not configured."); st.session_state.processing_log.append(f"  ❌ ERROR: Halting for '{keyword_val}'."); st.stop()
@@ -110,40 +120,25 @@ if start_button_val:
                     st.session_state.results_data.append(item_data_val)
                 else: st.session_state.processing_log.append(f"    ⚠️ Scraped, but no usable main text extracted.")
             time.sleep(0.2)
-        if successfully_scraped_for_this_keyword < num_results_wanted_per_keyword: st.session_state.processing_log.append(f"  ⚠️ For '{keyword_val}', only got {successfully_scraped_for_this_keyword}/{num_results_wanted_per_keyword} successful scrapes."); remaining_llm_tasks_for_keyword = (num_results_wanted_per_keyword - successfully_scraped_for_this_keyword) * total_llm_tasks_per_good_scrape; current_major_step_count += remaining_llm_tasks_for_keyword    
+        if successfully_scraped_for_this_keyword < num_results_wanted_per_keyword: st.session_state.processing_log.append(f"  ⚠️ For '{keyword_val}', only got {successfully_scraped_for_this_keyword}/{num_results_wanted_per_keyword} successful scrapes."); remaining_llm_tasks_for_keyword = (num_results_wanted_per_keyword - successfully_scraped_for_this_keyword) * total_llm_tasks_per_good_scrape; current_major_step_count += remaining_llm_tasks_for_keyword
+    
     with progress_bar_placeholder: st.empty()
-
-    consolidated_summary_text_for_batch = None
-    topic_for_consolidation_for_batch = "Multiple Topics / Not Specified"
+    consolidated_summary_text_for_batch = None; topic_for_consolidation_for_batch = "Multiple Topics / Not Specified"
     if st.session_state.results_data and llm_key_available and (enable_llm_summary_val or llm_extract_query_input_val.strip()):
         st.session_state.processing_log.append(f"\n✨ Generating consolidated overview...")
         with st.spinner("Generating consolidated overview..."):
             if not keywords_list_val_runtime: topic_for_consolidation_for_batch = "the searched topics"
             elif len(keywords_list_val_runtime) == 1: topic_for_consolidation_for_batch = keywords_list_val_runtime[0]
             else: topic_for_consolidation_for_batch = f"topics: {', '.join(keywords_list_val_runtime[:3])}{'...' if len(keywords_list_val_runtime) > 3 else ''}"
-            
-            all_valid_llm_outputs = [
-                item.get("llm_summary") or item.get("llm_extracted_info")
-                for item in st.session_state.results_data
-                if (item.get("llm_summary") and not str(item.get("llm_summary", "")).lower().startswith("llm error") and not str(item.get("llm_summary", "")).lower().startswith("no text content")) or \
-                   (item.get("llm_extracted_info") and not str(item.get("llm_extracted_info", "")).lower().startswith("llm error") and not str(item.get("llm_extracted_info", "")).lower().startswith("no text content"))
-            ]
-            
-            # --- TEMPORARY DEBUG for consolidation input ---
-            st.session_state.processing_log.append(f"  DEBUG: Number of valid LLM outputs for consolidation: {len(all_valid_llm_outputs)}")
-            if all_valid_llm_outputs:
-                st.session_state.processing_log.append("  DEBUG: First valid LLM output snippet for consolidation: " + str(all_valid_llm_outputs[0])[:200] + "...")
-            # --- END TEMPORARY DEBUG ---
-
-            if not all_valid_llm_outputs:
-                st.warning("No valid LLM outputs to consolidate for an overview."); consolidated_summary_text_for_batch = "Error: No valid LLM outputs were available for consolidation."; st.session_state.processing_log.append("  ❌ No valid LLM outputs for consolidation.")
+            all_valid_llm_outputs = [item.get("llm_summary") or item.get("llm_extracted_info") for item in st.session_state.results_data if (item.get("llm_summary") and not str(item.get("llm_summary", "")).lower().startswith("llm error") and not str(item.get("llm_summary", "")).lower().startswith("no text content")) or (item.get("llm_extracted_info") and not str(item.get("llm_extracted_info", "")).lower().startswith("llm error") and not str(item.get("llm_extracted_info", "")).lower().startswith("no text content"))]
+            # st.session_state.processing_log.append(f"  DEBUG: Number of valid LLM outputs for consolidation: {len(all_valid_llm_outputs)}") # Debug commented
+            # if all_valid_llm_outputs: st.session_state.processing_log.append("  DEBUG: First valid LLM output snippet: " + str(all_valid_llm_outputs[0])[:200] + "...") # Debug commented
+            if not all_valid_llm_outputs: st.warning("No valid LLM outputs to consolidate."); consolidated_summary_text_for_batch = "Error: No valid LLM outputs for consolidation."; st.session_state.processing_log.append("  ❌ No valid LLM outputs for consolidation.")
             else:
-                llm_api_key_to_use = cfg.llm.google_gemini_api_key if cfg.llm.provider == "google" else cfg.llm.openai_api_key
-                llm_model_to_use = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize
+                llm_api_key_to_use = cfg.llm.google_gemini_api_key if cfg.llm.provider == "google" else cfg.llm.openai_api_key; llm_model_to_use = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize
                 consolidated_summary_text_for_batch = llm_processor.generate_consolidated_summary(all_valid_llm_outputs, topic_context=topic_for_consolidation_for_batch, api_key=llm_api_key_to_use, model_name=llm_model_to_use, max_input_chars=cfg.llm.max_input_chars)
-                st.session_state.processing_log.append(f"  Consolidated Overview Raw: {str(consolidated_summary_text_for_batch)[:150] if consolidated_summary_text_for_batch else 'Failed/Empty'}...")
+                # st.session_state.processing_log.append(f"  Consolidated Overview Raw: {str(consolidated_summary_text_for_batch)[:150] if consolidated_summary_text_for_batch else 'Failed/Empty'}...") # Debug commented
         st.session_state.consolidated_summary_text = consolidated_summary_text_for_batch
-    
     if st.session_state.sheet_writing_enabled and st.session_state.gs_worksheet:
         if st.session_state.results_data or st.session_state.consolidated_summary_text:
             batch_process_timestamp_for_sheet = time.strftime("%Y-%m-%d %H:%M:%S"); st.session_state.processing_log.append(f"\n💾 Writing batch data (started {batch_process_timestamp_for_sheet}) to Google Sheets...")
@@ -152,15 +147,12 @@ if start_button_val:
             if write_successful: st.session_state.processing_log.append(f"  Batch data written to Google Sheets.")
             else: st.session_state.processing_log.append(f"  ❌ Failed to write batch data to Google Sheets.")
     elif st.session_state.results_data: st.session_state.processing_log.append("\n⚠️ Google Sheets writing is disabled or not configured.")
-    
     if st.session_state.results_data or st.session_state.consolidated_summary_text : st.success("All processing complete!")
     else: st.warning("Processing complete, but no data was generated.")
 
-# --- Display Sections (Download button, Consolidated Summary, Individual Results, Log) ---
-# ... (Keep the display sections from v1.6.4, including the Download Button logic) ...
-# Make sure the `results_container` and `log_container` are used consistently.
+# --- Display Sections ---
 with results_container:
-    if st.session_state.results_data:
+    if st.session_state.results_data: # Show download button only if there are item results
         st.markdown("---")
         item_details_for_excel = []
         item_specific_headers = [h for h in data_storage.MASTER_HEADER if h not in ["Record Type", "Batch Consolidated Summary", "Batch Topic/Keywords", "Items in Batch"]]
@@ -195,19 +187,26 @@ with results_container:
                 if item_val.get('scraped_main_text'):
                     with st.popover("View Main Text", use_container_width=True): st.text_area(f"Main Text", value=item_val['scraped_main_text'], height=400, key=f"main_text_popover_{i}", disabled=True)
                 else: st.caption("No main text was extracted or deemed usable.")
+                
                 if item_val.get("llm_summary") or item_val.get("llm_extracted_info"):
                     st.markdown("**LLM Insights:**")
-                    if item_val.get("llm_summary"): with st.container(border=True): st.markdown(f"**Summary (LLM):**"); st.markdown(item_val["llm_summary"])
-                    if item_val.get("llm_extracted_info"): with st.container(border=True): st.markdown(f"**Extracted Info (LLM) for '{st.session_state.last_extract_query}':**"); st.markdown(item_val["llm_extracted_info"])
+                    if item_val.get("llm_summary"):
+                        with st.container(border=True): # This 'with' starts a new block
+                            st.markdown(f"**Summary (LLM):**")
+                            st.markdown(item_val["llm_summary"]) # This should be indented under the 'with'
+                    if item_val.get("llm_extracted_info"):
+                        with st.container(border=True): # This 'with' starts a new block
+                            st.markdown(f"**Extracted Info (LLM) for '{st.session_state.last_extract_query}':**")
+                            st.markdown(item_val["llm_extracted_info"]) # This should be indented under the 'with'
                 st.caption(f"Timestamp: {item_val.get('timestamp')}")
 
-with log_container:
+with log_container: # log_container was defined globally
     if st.session_state.processing_log:
         with st.expander("📜 View Processing Log", expanded=False):
             log_text = "\n".join(st.session_state.processing_log)
             st.code(log_text, language=None)
 
 st.markdown("---")
-st.caption("Keyword Search & Analysis Tool v1.6.5")
+st.caption("Keyword Search & Analysis Tool v1.6.6")
 
 # end of app.py
