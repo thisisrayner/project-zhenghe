@@ -1,44 +1,60 @@
 name: Generate Codebase Summary
 
+# Controls when the workflow will run
 on:
   push:
     branches:
-      - main # Or your default branch
-    paths:
+      - main # Or your default branch (e.g., master, main)
+    paths: # Only run if relevant Python files or the workflow itself changes
       - 'app.py'
       - 'modules/**.py'
       - 'generate_code_summary.py'
       - '.github/workflows/generate_summary.yml'
-  workflow_dispatch:
+  workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
 
 jobs:
   generate-summary:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # Use a Linux runner
+
+    # Grant GITHUB_TOKEN permissions to commit back to the repository
     permissions:
       contents: write
 
     steps:
+      # Step 1: Check out the repository's code
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Step 2: Set up Python environment
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
-          cache: 'pip'
+          python-version: '3.10' # Specify your project's Python version
+          # cache: 'pip' # REMOVED: Not needed as this workflow doesn't pip install
 
+      # Step 3: (Optional Install dependencies - not needed for current generate_code_summary.py)
+      # - name: Install dependencies 
+      #   run: |
+      #     python -m pip install --upgrade pip
+      #     # If generate_code_summary.py ever needs packages from requirements.txt:
+      #     # pip install -r requirements.txt 
+
+      # Step 4: Run the codebase summary generator script
       - name: Run summary generator script
         run: python generate_code_summary.py
+        # This script should be in the root of your repository
 
+      # Step 5: Commit and push the generated codebase_summary.md if it changed
       - name: Commit and push if summary changed
         run: |
           echo "--- Checking Git status before add ---"
-          git status # Show status before adding
+          git status
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add codebase_summary.md
           echo "--- Checking Git status after add ---"
-          git status # Show status after adding
+          git status
+          # Check if there are staged changes (i.e., if codebase_summary.md was modified or created)
           if ! git diff --staged --quiet; then
             echo "Changes detected in codebase_summary.md. Attempting to commit..."
             git commit -m "Automated: Update codebase_summary.md"
