@@ -25,11 +25,6 @@ The project is designed with modularity to facilitate future enhancements, inclu
 
 ## Project Structure
 
-    
-
-IGNORE_WHEN_COPYING_START
-Use code with caution. Markdown
-IGNORE_WHEN_COPYING_END
 
 streamlit-search-tool/
 ├── app.py # Main Streamlit application file (UI logic)
