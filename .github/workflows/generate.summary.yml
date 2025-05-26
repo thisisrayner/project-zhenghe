@@ -1,0 +1,59 @@
+name: Generate Codebase Summary
+
+# Controls when the workflow will run
+on:
+  push:
+    branches:
+      - main # Or your default branch (e.g., master, main)
+    paths: # Only run if relevant Python files or the workflow itself changes
+      - 'app.py'
+      - 'modules/**.py'
+      - 'generate_code_summary.py'
+      - '.github/workflows/generate_summary.yml'
+  workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
+
+jobs:
+  generate-summary:
+    runs-on: ubuntu-latest # Use a Linux runner
+
+    # Grant GITHUB_TOKEN permissions to commit back to the repository
+    permissions:
+      contents: write
+
+    steps:
+      # Step 1: Check out the repository's code
+      - name: Checkout repository
+        uses: actions/checkout@v4 # Use the latest version of the checkout action
+
+      # Step 2: Set up Python environment
+      - name: Set up Python
+        uses: actions/setup-python@v5 # Use the latest version of the setup-python action
+        with:
+          python-version: '3.10' # Specify your project's Python version
+          cache: 'pip' # Cache pip dependencies for faster runs
+
+      # Step 3: Install dependencies (if your script had any, though this one doesn't)
+      # - name: Install dependencies
+      #   run: |
+      #     python -m pip install --upgrade pip
+      #     pip install -r requirements.txt # Assuming you might add dependencies later
+
+      # Step 4: Run the codebase summary generator script
+      - name: Run summary generator script
+        run: python generate_code_summary.py
+        # The script generate_code_summary.py should be in the root of your repo
+
+      # Step 5: Commit and push the generated codebase_summary.md if it changed
+      - name: Commit and push if summary changed
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add codebase_summary.md
+          # Check if there are staged changes (i.e., if codebase_summary.md was modified or created)
+          if ! git diff --staged --quiet; then
+            git commit -m "Automated: Update codebase_summary.md"
+            git push
+            echo "codebase_summary.md was updated and pushed."
+          else
+            echo "No changes to codebase_summary.md. Nothing to commit."
+          fi
