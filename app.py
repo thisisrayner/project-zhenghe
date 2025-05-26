@@ -34,7 +34,7 @@ from typing import List, Dict, Any, Optional # For type hinting
 # --- Page Configuration ---
 st.set_page_config(
     page_title="Keyword Search & Analysis Tool",
-    page_icon="🔎",
+    page_icon="🔮",
     layout="wide"
 )
 
