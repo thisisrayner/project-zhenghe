@@ -1,86 +1,91 @@
 # modules/search_engine.py
+# Version 1.1: Enhanced docstrings and type hinting.
+
+"""
+Handles interactions with the Google Custom Search API.
+
+This module provides functionality to perform searches using specified
+keywords, API key, and Custom Search Engine (CSE) ID.
+It uses the google-api-python-client library.
+"""
 
 from googleapiclient.discovery import build
-import streamlit as st # For potential caching, though core logic is separate
+# Removed st from here as it's not strictly needed for core logic, errors can be raised/returned
+# import streamlit as st
+from typing import List, Dict, Any
 
-# No direct st.secrets access here; API keys are passed in.
-
-def perform_search(query: str, api_key: str, cse_id: str, num_results: int = 5, **kwargs) -> list[dict]:
+def perform_search(
+    query: str,
+    api_key: str,
+    cse_id: str,
+    num_results: int = 5,
+    **kwargs: Any  # Allows passing additional CSE API parameters
+) -> List[Dict[str, Any]]:
     """
-    Performs a Google Custom Search.
+    Performs a Google Custom Search for the given query.
 
     Args:
-        query (str): The search query.
-        api_key (str): Your Google API key.
-        cse_id (str): Your Custom Search Engine ID.
-        num_results (int): Number of results to retrieve (max 10 per call for free tier).
-        **kwargs: Additional parameters for the CSE API (e.g., siteSearch).
+        query: The search term(s).
+        api_key: The Google API key authorized for Custom Search API.
+        cse_id: The ID of the Custom Search Engine to use.
+        num_results: The number of search results to return (max 10 per API call).
+        **kwargs: Additional parameters to pass to the CSE list method,
+                  e.g., siteSearch, exactTerms, etc. Refer to Google CSE API docs.
 
     Returns:
-        list[dict]: A list of search result items (dictionaries),
-                    or an empty list if an error occurs or no results.
-                    Each item typically contains 'title', 'link', 'snippet'.
+        A list of search result item dictionaries as returned by the API.
+        Each item typically contains 'title', 'link', 'snippet', etc.
+        Returns an empty list if an error occurs or no results are found.
     """
     if not api_key or not cse_id:
-        # This check should ideally be handled before calling,
-        # e.g., by config loader ensuring keys exist.
-        st.error("Google API Key or CSE ID is missing in search_engine.perform_search.")
+        # This situation should ideally be caught by config validation in app.py
+        print("ERROR (search_engine): Google API Key or CSE ID is missing.")
         return []
+    
+    # The API typically allows a maximum of 10 results per request.
     if num_results > 10:
-        num_results = 10 # API allows max 10 for standard usage in one request
+        num_results = 10
+    if num_results < 1:
+        num_results = 1
 
     try:
+        # Build the service object for the Custom Search API.
         service = build("customsearch", "v1", developerKey=api_key)
-        result = service.cse().list(
+        
+        # Execute the search query.
+        result: Dict[str, Any] = service.cse().list(
             q=query,
             cx=cse_id,
             num=num_results,
-            # Add other parameters from kwargs if needed
-            **kwargs
+            **kwargs # Pass through any additional API parameters
         ).execute()
-        return result.get('items', []) # result['items'] can be missing if no results
+        
+        # Extract and return the 'items' list from the result, or an empty list.
+        return result.get('items', [])
     except Exception as e:
-        # In a real app, log this error more robustly
-        st.error(f"Google Search API error for query '{query}': {e}")
+        # Log the error. In a larger application, use a proper logging framework.
+        print(f"ERROR (search_engine): Google Search API call failed for query '{query}'. Error: {e}")
+        # Consider raising a custom exception or returning a more specific error indicator
+        # if app.py needs to differentiate error types. For now, empty list on error.
         return []
 
 if __name__ == '__main__':
-    # --- Simple Test for this module ---
-    # To run this test, you would need to set your secrets.toml and run:
-    # streamlit run modules/search_engine.py
-    # This is a basic test; real testing should happen within the app.py context
-    # or with dedicated unit tests.
-
-    st.title("Search Engine Module Test")
-
-    # Attempt to load config to get API keys for testing
-    # This requires modules/config.py to be importable and working
-    try:
-        from config import load_config
-        cfg = load_config()
-        if cfg and cfg.google.api_key and cfg.google.cse_id:
-            GOOGLE_API_KEY_TEST = cfg.google.api_key
-            CSE_ID_TEST = cfg.google.cse_id
-        else:
-            st.error("Could not load valid Google API Key/CSE ID from config for testing.")
-            GOOGLE_API_KEY_TEST = None
-            CSE_ID_TEST = None
-    except ImportError:
-        st.error("Could not import config module for testing.")
-        GOOGLE_API_KEY_TEST = None
-        CSE_ID_TEST = None
-
-
-    test_query = st.text_input("Enter test query:", "streamlit python")
-    if st.button("Test Search"):
-        if GOOGLE_API_KEY_TEST and CSE_ID_TEST:
-            st.write(f"Performing search for: '{test_query}'")
-            results = perform_search(test_query, GOOGLE_API_KEY_TEST, CSE_ID_TEST, num_results=3)
-            if results:
-                st.success(f"Found {len(results)} results:")
-                for res in results:
-                    st.markdown(f"- **[{res.get('title')}]({res.get('link')})**\n  {res.get('snippet')}")
-            else:
-                st.warning("No results found or an error occurred.")
-        else:
-            st.error("API Key or CSE ID not available for testing. Please check secrets.toml and config.py")
+    # This test requires secrets to be available, ideally run through app.py or with mocked config.
+    # For direct testing, you'd need to manually provide API_KEY and CSE_ID.
+    print("Search Engine Module - Direct Test Mode")
+    # Example (replace with actual keys for a real test, or use a mock)
+    # TEST_API_KEY = "YOUR_API_KEY"
+    # TEST_CSE_ID = "YOUR_CSE_ID"
+    # if TEST_API_KEY != "YOUR_API_KEY":
+    #     test_query = input("Enter test search query: ")
+    #     results = perform_search(test_query, TEST_API_KEY, TEST_CSE_ID, num_results=3)
+    #     if results:
+    #         print(f"\nFound {len(results)} results for '{test_query}':")
+    #         for i, res in enumerate(results):
+    #             print(f"  {i+1}. {res.get('title')} - {res.get('link')}")
+    #     else:
+    #         print("No results found or an error occurred.")
+    # else:
+    #     print("Test API key and CSE ID not set. Skipping direct test.")
+    print("To test this module, integrate it with app.py which handles configuration loading.")
+# end of modules/search_engine.py
