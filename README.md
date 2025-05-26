@@ -1,5 +1,5 @@
       
-# Streamlit Keyword Search & Analysis Tool 🔎📝
+# Streamlit Keyword Search & Analysis Tool 
 
 This Streamlit application allows users to input keywords, perform Google searches, extract metadata and main content from the resulting URLs, and leverage a Large Language Model (LLM) – currently configured for **Google Gemini** – to summarize content, extract specific information, and generate a consolidated overview. Results are displayed in the app, can be downloaded as an Excel file, and are also recorded to a Google Sheet.
 
