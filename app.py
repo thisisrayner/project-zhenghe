@@ -94,7 +94,7 @@ if not st.session_state.sheet_connection_attempted_this_session:
         st.session_state.sheet_writing_enabled = False
 
 # --- UI Layout Definition ---
-st.title("Keyword Search & Analysis Tool 🔎📝")
+st.title("Keyword Search & Analysis Tool 🔮")
 st.markdown("Enter keywords, configure options, and let the tool gather insights for you.")
 
 with st.sidebar:
