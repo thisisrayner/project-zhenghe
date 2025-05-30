@@ -35,11 +35,6 @@ The project is designed with modularity to facilitate future enhancements, inclu
 
 ## Project Structure
 
-    
-
-IGNORE_WHEN_COPYING_START
-Use code with caution. Markdown
-IGNORE_WHEN_COPYING_END
 
 streamlit-search-tool/
 ├── app.py # Main Streamlit application file (UI logic, orchestration)
@@ -115,11 +110,7 @@ Before you begin, ensure you have met the following requirements:
 ```bash
 streamlit run app.py
 
-    
 
-IGNORE_WHEN_COPYING_START
-Use code with caution.
-IGNORE_WHEN_COPYING_END
 
 Access at http://localhost:8501.
 Usage
