@@ -4,7 +4,24 @@
 
 """
 Streamlit Web Application for Keyword Search, Web Scraping, LLM Analysis, and Data Recording.
-(Rest of docstring as in v1.9.2)
+
+This application allows users to:
+1. Input keywords for searching via Google Custom Search.
+2. Scrape metadata and main content from the search result URLs.
+3. Utilize a Large Language Model (LLM, e.g., Google Gemini) to:
+    a. Generate individual summaries for each scraped page.
+    b. Extract specific user-defined information from each page (with relevancy score).
+    c. Create a consolidated overview summary from all processed items in a batch,
+       potentially focused by the user's extraction query and item relevancy.
+    d. Generate alternative search queries to diversify search scope.
+4. Display the processed information and LLM insights in an interactive UI.
+5. Store the detailed results (including a batch summary row and individual item rows)
+   into a specified Google Sheet.
+6. Download the results (item details and consolidated summary) as an Excel file.
+
+The application is structured modularly, with separate Python files in the 'modules'
+directory handling configuration, search, scraping, LLM processing, and data storage.
+API keys and sensitive settings are managed via Streamlit Secrets (`.streamlit/secrets.toml`).
 """
 
 import streamlit as st
@@ -16,22 +33,18 @@ from typing import List, Dict, Any, Optional
 import math 
 
 # --- Page Configuration ---
-# (Same as v1.9.2)
 st.set_page_config(page_title="Keyword Search & Analysis Tool", page_icon="🔮", layout="wide")
 
 # --- Load Application Configuration ---
-# (Same as v1.9.2)
 cfg: Optional[config.AppConfig] = config.load_config()
 if not cfg: st.error("CRITICAL: Application configuration failed to load. Check secrets.toml."); st.stop()
 
 # --- Session State Initialization ---
-# (Same as v1.9.2)
 default_session_state: Dict[str, Any] = {'processing_log': [], 'results_data': [], 'last_keywords': "", 'last_extract_query': "", 'consolidated_summary_text': None, 'gs_worksheet': None, 'sheet_writing_enabled': False, 'sheet_connection_attempted_this_session': False }
 for key, default_value in default_session_state.items():
     if key not in st.session_state: st.session_state[key] = default_value
 
 # --- Google Sheets Setup ---
-# (Same as v1.9.2)
 if not st.session_state.sheet_connection_attempted_this_session:
     st.session_state.sheet_connection_attempted_this_session = True 
     if cfg.gsheets.service_account_info and (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name):
@@ -49,14 +62,12 @@ with st.sidebar:
     st.header("⚙️ Configuration")
     st.subheader("Search Parameters")
     
-    # --- MODIFIED KEYWORDS INPUT ---
-    keywords_input_val: str = st.text_input( # Changed from st.text_area
-        "Keywords (comma-separated):", # Label updated
+    keywords_input_val: str = st.text_input( 
+        "Keywords (comma-separated):", 
         value=st.session_state.last_keywords,
-        key="keywords_text_input_main", # Changed key to avoid potential conflicts
-        help="Enter one or more search keywords/phrases, separated by commas. Press Enter to apply changes." # Updated help text
+        key="keywords_text_input_main", 
+        help="Enter one or more search keywords/phrases, separated by commas. Press Enter to apply changes." 
     )
-    # --- END OF MODIFIED KEYWORDS INPUT ---
 
     num_results_wanted_per_keyword: int = st.slider("Number of successfully scraped results per keyword:", min_value=1, max_value=10, value=cfg.num_results_per_keyword_default, key="num_results_slider", help="The tool will attempt to get this many usable web pages for each keyword.")
     enable_llm_query_generation_val: bool = st.checkbox( 
@@ -69,7 +80,7 @@ with st.sidebar:
     if llm_key_available: model_display_name: str = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize; st.caption(f"Using Model: {model_display_name}")
     else: st.caption(f"API Key for {cfg.llm.provider.upper()} not configured in secrets. LLM features disabled.")
     enable_llm_summary_val: bool = st.checkbox("Generate LLM Summary?", value=True, key="llm_summary_checkbox", disabled=not llm_key_available)
-    llm_extract_query_input_val: str = st.text_input("Specific info to extract with LLM (also guides focused consolidated summary):", value=st.session_state.last_extract_query, placeholder="e.g., Key products, contact emails", key="llm_extract_text_input", help="Enter keywords separated by commas. Press Enter to apply changes.") # Added help text here for consistency
+    llm_extract_query_input_val: str = st.text_input("Specific info to extract with LLM (also guides focused consolidated summary):", value=st.session_state.last_extract_query, placeholder="e.g., Key products, contact emails", key="llm_extract_text_input", help="Enter keywords separated by commas. Press Enter to apply changes.") 
     if not st.session_state.sheet_writing_enabled:
         if cfg.gsheets.service_account_info or cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name: st.sidebar.warning("⚠️ Google Sheets: Connection failed or sheet/worksheet not found. Results will not be saved.")
         else: st.sidebar.caption("Google Sheets integration not configured (no secrets found).")
@@ -80,7 +91,6 @@ results_container = st.container()
 log_container = st.container()
 
 def to_excel(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes:
-    # (Same as v1.9.2)
     output = BytesIO();
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_item_details.to_excel(writer, index=False, sheet_name='Item_Details') 
@@ -94,13 +104,9 @@ if start_button_val:
     st.session_state.last_keywords = keywords_input_val 
     st.session_state.last_extract_query = llm_extract_query_input_val
     
-    # --- MODIFIED KEYWORD PARSING ---
-    # Now, keywords_input_val is a single string, expected to be comma-separated.
-    # Newline separation is no longer explicitly handled here as st.text_input is single-line.
     initial_keywords_list: List[str] = [
-        k.strip() for k in keywords_input_val.split(',') if k.strip() # Split by comma ONLY
+        k.strip() for k in keywords_input_val.split(',') if k.strip() 
     ]
-    # --- END OF MODIFIED KEYWORD PARSING ---
 
     if not initial_keywords_list:
         st.sidebar.error("Please enter at least one keyword.")
@@ -108,39 +114,67 @@ if start_button_val:
 
     keywords_list_val_runtime: List[str] = list(initial_keywords_list) 
 
-    # (LLM Query Generation, Progress Bar Calculation, Main Loop, Display Sections - same as v1.9.2)
-    # ... (rest of the script from v1.9.2 remains the same) ...
     if enable_llm_query_generation_val and llm_key_available and initial_keywords_list:
         st.session_state.processing_log.append("\n🧠 Attempting to generate additional search queries with LLM...")
-        num_user_terms = len(initial_keywords_list); num_llm_terms_to_generate = min(math.floor(num_user_terms * 1.5), 5)
+        num_user_terms = len(initial_keywords_list)
+        num_llm_terms_to_generate = min(math.floor(num_user_terms * 1.5), 5)
+
         if num_llm_terms_to_generate > 0:
-            llm_api_key_to_use: Optional[str] = cfg.llm.google_gemini_api_key if cfg.llm.provider == "google" else cfg.llm.openai_api_key; llm_model_for_query_gen: str = cfg.llm.google_gemini_model 
+            llm_api_key_to_use: Optional[str] = cfg.llm.google_gemini_api_key if cfg.llm.provider == "google" else cfg.llm.openai_api_key
+            llm_model_for_query_gen: str = cfg.llm.google_gemini_model 
+            
             with st.spinner(f"LLM generating {num_llm_terms_to_generate} additional search queries..."):
-                generated_queries: Optional[List[str]] = llm_processor.generate_search_queries(original_keywords=initial_keywords_list, specific_info_query=llm_extract_query_input_val if llm_extract_query_input_val.strip() else None, num_queries_to_generate=num_llm_terms_to_generate, api_key=llm_api_key_to_use, model_name=llm_model_for_query_gen )
+                generated_queries: Optional[List[str]] = llm_processor.generate_search_queries(
+                    original_keywords=initial_keywords_list,
+                    specific_info_query=llm_extract_query_input_val if llm_extract_query_input_val.strip() else None,
+                    num_queries_to_generate=num_llm_terms_to_generate,
+                    api_key=llm_api_key_to_use,
+                    model_name=llm_model_for_query_gen 
+                )
+            
             if generated_queries:
                 st.session_state.processing_log.append(f"  ✨ LLM generated {len(generated_queries)} new queries: {', '.join(generated_queries)}")
                 existing_keywords_set = set(k.lower() for k in keywords_list_val_runtime)
                 for gq in generated_queries:
-                    if gq.lower() not in existing_keywords_set: keywords_list_val_runtime.append(gq); existing_keywords_set.add(gq.lower())
+                    if gq.lower() not in existing_keywords_set:
+                        keywords_list_val_runtime.append(gq)
+                        existing_keywords_set.add(gq.lower())
                 st.session_state.processing_log.append(f"  🔍 Total unique keywords to search: {len(keywords_list_val_runtime)}")
-            else: st.session_state.processing_log.append("  ⚠️ LLM did not generate new search queries or an error occurred. Proceeding with original keywords.")
-        else: st.session_state.processing_log.append("  ℹ️ No additional LLM queries requested based on calculation.")
-    oversample_factor: float = 2.0; max_google_fetch_per_keyword: int = 10 ; est_urls_to_fetch_per_keyword: int = min(max_google_fetch_per_keyword, int(num_results_wanted_per_keyword * oversample_factor))
+            else:
+                st.session_state.processing_log.append("  ⚠️ LLM did not generate new search queries or an error occurred. Proceeding with original keywords.")
+        else:
+            st.session_state.processing_log.append("  ℹ️ No additional LLM queries requested based on calculation.")
+    
+    oversample_factor: float = 2.0
+    max_google_fetch_per_keyword: int = 10 
+    est_urls_to_fetch_per_keyword: int = min(max_google_fetch_per_keyword, int(num_results_wanted_per_keyword * oversample_factor))
     if est_urls_to_fetch_per_keyword < num_results_wanted_per_keyword: est_urls_to_fetch_per_keyword = num_results_wanted_per_keyword
+    
     total_llm_tasks_per_good_scrape: int = 0
     if llm_key_available: 
         if enable_llm_summary_val: total_llm_tasks_per_good_scrape += 1
         if llm_extract_query_input_val.strip(): total_llm_tasks_per_good_scrape +=1
-    total_major_steps_for_progress: int = (len(keywords_list_val_runtime) * est_urls_to_fetch_per_keyword) + (len(keywords_list_val_runtime) * num_results_wanted_per_keyword * total_llm_tasks_per_good_scrape)
-    if enable_llm_query_generation_val and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0: total_major_steps_for_progress +=1 
-    current_major_step_count: int = 0; progress_bar_placeholder = st.empty() 
+    
+    total_major_steps_for_progress: int = \
+        (len(keywords_list_val_runtime) * est_urls_to_fetch_per_keyword) + \
+        (len(keywords_list_val_runtime) * num_results_wanted_per_keyword * total_llm_tasks_per_good_scrape)
+    if enable_llm_query_generation_val and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0:
+        total_major_steps_for_progress +=1 
+    
+    current_major_step_count: int = 0
+    progress_bar_placeholder = st.empty() 
+
     if enable_llm_query_generation_val and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0 :
         current_major_step_count +=1
-        with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text="LLM Query Generation Complete...")
+        with progress_bar_placeholder.container():
+             st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0,
+                        text="LLM Query Generation Complete...")
+
     for keyword_val in keywords_list_val_runtime:
         st.session_state.processing_log.append(f"\n🔎 Processing keyword: {keyword_val}")
         with progress_bar_placeholder.container(): 
-             st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=f"Starting keyword: {keyword_val}...")
+             st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0,
+                        text=f"Starting keyword: {keyword_val}...")
         if not (cfg.google_search.api_key and cfg.google_search.cse_id):
             st.error("Google Search API Key or CSE ID not configured. Cannot proceed."); st.session_state.processing_log.append(f"  ❌ ERROR: Halting for '{keyword_val}'."); st.stop()
         urls_to_fetch_from_google: int = est_urls_to_fetch_per_keyword
@@ -233,7 +267,7 @@ with results_container:
         df_item_details = pd.DataFrame(item_details_for_excel, columns=excel_item_headers) 
         df_consolidated_summary_excel: Optional[pd.DataFrame] = None
         if st.session_state.get('consolidated_summary_text') and not str(st.session_state.consolidated_summary_text).lower().startswith("error:"):
-            last_run_keywords_excel_display: List[str] = [k.strip() for k in st.session_state.last_keywords.replace(',', '\n').split('\n') if k.strip()] 
+            last_run_keywords_excel_display: List[str] = [k.strip() for k in st.session_state.last_keywords.split(',') if k.strip()] 
             topic_display_excel: str = last_run_keywords_excel_display[0] if len(last_run_keywords_excel_display) == 1 else (f"Topics: {', '.join(last_run_keywords_excel_display[:3])}{'...' if len(last_run_keywords_excel_display) > 3 else ''}" if last_run_keywords_excel_display else "General Batch")
             excel_consolidation_note = "General Overview"
             if st.session_state.last_extract_query and st.session_state.last_extract_query.strip(): excel_consolidation_note = f"Focused Overview on: '{st.session_state.last_extract_query}'"
@@ -278,6 +312,6 @@ with log_container:
         with st.expander("📜 View Processing Log", expanded=False): 
             st.code("\n".join(st.session_state.processing_log), language=None)
 st.markdown("---")
-st.caption("Keyword Search & Analysis Tool v1.9.3") # Version updated
+st.caption("Keyword Search & Analysis Tool v1.9.3")
 
 # end of app.py
