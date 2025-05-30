@@ -94,19 +94,19 @@ Docstring: Generates a list of new search queries based on original keywords and
 Module Docstring: Manages the Streamlit User Interface elements, layout, and user inputs.
 
 ### def get_display_prefix_for_item(item_data: Dict[str, Any], llm_generated_keywords_set_for_display: Set[str]) -> str
-Docstring: Determines the emoji prefix for an item based on its relevancy score (from the FIRST extraction query)
+Docstring: None
 
 ### def render_sidebar(cfg: config.AppConfig, current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]
 Docstring: Renders the sidebar UI elements and returns user inputs.
 
 ### def apply_custom_css()
-Docstring: Applies custom CSS for styling elements like the primary button.
+Docstring: None
 
 ### def display_consolidated_summary()
-Docstring: Displays the consolidated summary if available in session state.
+Docstring: None
 
 ### def display_individual_results()
-Docstring: Displays individual processed items in expanders if available in session state.
+Docstring: None
 
 ### def display_processing_log()
 Docstring: None
