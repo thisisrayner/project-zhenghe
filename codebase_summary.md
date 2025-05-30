@@ -100,7 +100,7 @@ Docstring: Helper function to parse relevancy score from an LLM extraction strin
 Docstring: Determines the number emoji prefix for an item based on the HIGHEST relevancy score
 
 ### def render_sidebar(cfg: config.AppConfig, current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]
-Docstring: None
+Docstring: Renders the sidebar UI elements and returns user inputs.
 
 ### def apply_custom_css()
 Docstring: None
@@ -109,7 +109,7 @@ Docstring: None
 Docstring: None
 
 ### def display_individual_results()
-Docstring: Displays individual processed items in expanders if available in session state.
+Docstring: None
 
 ### def display_processing_log()
 Docstring: None
