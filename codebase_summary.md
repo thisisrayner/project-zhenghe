@@ -138,3 +138,11 @@ Docstring: Fetches content from the given URL and extracts metadata and main tex
 
 ---
 
+## File: modules/process_manager.py
+Module Docstring: Handles the main workflow of searching, scraping, LLM processing, and data aggregation.
+
+### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_query_input: str, num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str]]
+Docstring: Executes the full search, scrape, LLM process, and GSheet storage pipeline.
+
+---
+
