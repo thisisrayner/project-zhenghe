@@ -4,7 +4,7 @@
 Module Docstring: Streamlit Web Application for Keyword Search, Web Scraping, LLM Analysis, and Data Recording.
 
 ### def to_excel(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes
-Docstring: Converts one or two Pandas DataFrames into an Excel file in memory.
+Docstring: Converts DataFrames to Excel. (Implementation as provided previously) 
 
 ---
 
