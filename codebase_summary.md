@@ -142,7 +142,7 @@ Docstring: Fetches content from the given URL and extracts metadata and main tex
 Module Docstring: Handles the main workflow of searching, scraping, LLM processing, and data aggregation.
 
 ### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
-Docstring: Helper function to parse relevancy score from an LLM extraction string.
+Docstring: None
 
 ### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str]]
 Docstring: None
