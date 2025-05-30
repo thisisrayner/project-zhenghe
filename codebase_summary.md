@@ -1,13 +1,6 @@
 # Codebase Summary (v1.1)
 
-## File: app.py
-Module Docstring: Streamlit Web Application for Keyword Search, Web Scraping, LLM Analysis, and Data Recording.
-
-### def to_excel(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes
-Docstring: Converts DataFrames to Excel. (Same as v1.8.0) 
-
----
-
+Error parsing /home/runner/work/project-zhenghe/project-zhenghe/app.py: invalid syntax (app.py, line 199)
 ## File: modules/config.py
 Module Docstring: Configuration management for the Streamlit Keyword Search & Analysis Tool.
 
