@@ -39,29 +39,7 @@ Docstring: Fetches content from the given URL and extracts metadata and main tex
 
 ---
 
-## File: modules/llm_processor.py
-Module Docstring: Handles interactions with Large Language Models (LLMs) for text processing.
-
-### def configure_gemini(api_key: Optional[str], force_recheck_models: bool = False) -> bool
-Docstring: Configures the Google Generative AI client with the provided API key.
-
-### def _call_gemini_api(model_name: str, prompt_parts: List[str], generation_config_args: Optional[Dict[str, Any]] = None, safety_settings_args: Optional[List[Dict[str, Any]]] = None, max_retries: int = 3, initial_backoff_seconds: float = 5.0, max_backoff_seconds: float = 60.0) -> Optional[str]
-Docstring: Internal helper function to make a call to the Google Gemini API (generate_content).
-
-### def _truncate_text_for_gemini(text: str, model_name: str, max_input_chars: int) -> str
-Docstring: Truncates text to a specified maximum number of characters.
-
-### def generate_summary(text_content: Optional[str], api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 100000) -> Optional[str]
-Docstring: Generates a narrative summary for the given text content using Gemini.
-
-### def extract_specific_information(text_content: Optional[str], extraction_query: str, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 100000) -> Optional[str]
-Docstring:     Extracts specific information based on a user's query from the text content using Gemini
-
-### def generate_consolidated_summary(summaries: List[Optional[str]], topic_context: str, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 150000) -> Optional[str]
-Docstring: Generates a consolidated overview from a list of individual summaries or text snippets.
-
----
-
+Error parsing /home/runner/work/project-zhenghe/project-zhenghe/modules/llm_processor.py: invalid syntax (llm_processor.py, line 523)
 ## File: modules/_init_.py
 Module Docstring: None
 
