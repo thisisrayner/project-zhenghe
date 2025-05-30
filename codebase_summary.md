@@ -97,19 +97,25 @@ Docstring: Generates a list of new search queries based on original keywords and
 ---
 
 ## File: modules/ui_manager.py
-Module Docstring: Manages the Streamlit User Interface components, including sidebar,
+Module Docstring: Manages the Streamlit User Interface elements, layout, and user inputs.
 
-### def get_display_prefix_for_item(item_data: Dict[str, Any], llm_generated_keywords: Set[str]) -> str
-Docstring: Determines the emoji prefix for an item based on its relevancy score
+### def get_display_prefix_for_item(item_data: Dict[str, Any], llm_generated_keywords_set_for_display: Set[str]) -> str
+Docstring: Determines the emoji prefix for an item based on its relevancy score and
 
-### def render_sidebar(cfg: config.AppConfig) -> Tuple[str, int, str, bool]
-Docstring: Renders the sidebar UI components and returns their current values.
+### def render_sidebar(cfg: config.AppConfig, current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, str, bool]
+Docstring: Renders the sidebar UI elements and returns user inputs.
 
 ### def apply_custom_css()
 Docstring: Applies custom CSS for styling elements like the primary button.
 
-### def display_main_content(results_container, log_container)
-Docstring: Displays the main content area including results and logs.
+### def display_consolidated_summary()
+Docstring: Displays the consolidated summary if available in session state.
+
+### def display_individual_results()
+Docstring: Displays individual processed items in expanders if available in session state.
+
+### def display_processing_log()
+Docstring: Displays the processing log in an expander if available in session state.
 
 ---
 
