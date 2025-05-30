@@ -1,6 +1,8 @@
       
 # Streamlit Keyword Search & Analysis Tool
 
+https://github.com/thisisrayner/project-zhenghe
+
 This Streamlit application empowers users to input keywords, perform Google searches (automatically enhanced by LLM-generated queries if an LLM is configured), extract metadata and main content from resulting URLs (supporting HTML and PDF text), and leverage a Large Language Model (LLM) – currently configured for **Google Gemini** – to summarize content, extract specific information with relevancy scoring, and generate a consolidated overview. Results are displayed interactively with visual cues for relevance, can be downloaded as an Excel file, and are also recorded to a Google Sheet.
 
 The project is designed with a high degree of modularity, with `app.py` acting as an orchestrator for specialized modules. This facilitates future enhancements, including the potential addition of a separate API layer for programmatic access.
