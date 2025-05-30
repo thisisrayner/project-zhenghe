@@ -26,9 +26,9 @@ Module Docstring: Handles data storage operations, primarily focused on Google S
 Docstring: None
 
 ### def ensure_master_header(worksheet: gspread.Worksheet) -> None
-Docstring: Ensures the MASTER_HEADER is present in Row 1 of the worksheet.
+Docstring: None
 
-### def write_batch_summary_and_items_to_sheet(worksheet: gspread.Worksheet, batch_timestamp: str, consolidated_summary: Optional[str], topic_context: str, item_data_list: List[Dict[str, Any]], extraction_query_text: Optional[str] = None, main_text_truncate_limit: int = 10000) -> bool
+### def write_batch_summary_and_items_to_sheet(worksheet: gspread.Worksheet, batch_timestamp: str, consolidated_summary: Optional[str], topic_context: str, item_data_list: List[Dict[str, Any]], extraction_queries_list: List[str], main_text_truncate_limit: int = 10000) -> bool
 Docstring: None
 
 ---
