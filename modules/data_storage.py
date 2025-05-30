@@ -1,6 +1,6 @@
 # modules/data_storage.py
-# Version 1.5.2: Refined ensure_master_header for blank sheets; confirmed meta/OG keys.
-# Includes "Content Type" in MASTER_HEADER.
+# Version 1.5.3: Assertive ensure_master_header to always write/overwrite if not matched.
+# Includes "Content Type" in MASTER_HEADER and previous key fixes.
 
 """
 Handles data storage operations, primarily focused on Google Sheets integration.
@@ -99,7 +99,7 @@ MASTER_HEADER: List[str] = [
     "Scraped Meta Description", # L
     "Scraped OG Title",         # M
     "Scraped OG Description",   # N
-    "Content Type",             # O << IMPORTANT FOR ALIGNMENT
+    "Content Type",             # O
     "LLM Summary (Individual)", # P
     "LLM Extracted Info (Query)",# Q
     "LLM Extraction Query",     # R
@@ -110,58 +110,48 @@ MASTER_HEADER: List[str] = [
 def ensure_master_header(worksheet: gspread.Worksheet) -> None:
     """
     Ensures the MASTER_HEADER is present in Row 1 of the worksheet.
-    If Row 1 is empty or doesn't exist (CellNotFound), it writes the header.
-    If Row 1 exists but doesn't match, it logs a warning.
+    If Row 1 does not exist, is empty, or does not match MASTER_HEADER,
+    it will be written/overwritten.
     """
+    header_action_needed = False
+    action_reason = ""
+
     try:
-        # Try to get the first row. If it's empty or doesn't exist, we write the header.
-        current_row1_values = worksheet.row_values(1) # This might throw an error if sheet is REALLY empty
+        current_row1_values = worksheet.row_values(1) # Attempt to get the first row
 
-        if not current_row1_values or all(cell == '' for cell in current_row1_values):
-            # Row 1 is empty or all cells are blank strings
-            worksheet.update('A1', [MASTER_HEADER], value_input_option='USER_ENTERED')
-            st.info(f"INFO: Wrote MASTER_HEADER to Row 1 of empty/blank worksheet '{worksheet.title}'.")
-        elif current_row1_values == MASTER_HEADER:
-            # Header is present and matches, nothing to do.
-            # st.info("INFO: MASTER_HEADER already present and matches in Row 1.") # Can be verbose
-            pass
-        else:
-            # Header exists but does not match the expected MASTER_HEADER.
-            st.warning(
-                f"WARNING: Worksheet '{worksheet.title}' Row 1 header does not match the expected MASTER_HEADER. "
-                f"Data alignment issues may occur. Consider clearing the sheet manually and rerunning "
-                f"to ensure the correct header is written. "
-                f"Current: {len(current_row1_values)} cols. Expected: {len(MASTER_HEADER)} cols."
-            )
-            # Optionally, you could force an update here, but it's safer to warn.
-            # worksheet.update('A1', [MASTER_HEADER], value_input_option='USER_ENTERED')
-            # st.info(f"INFO: Force updated non-matching header on worksheet '{worksheet.title}'.")
-
+        if not current_row1_values:
+            header_action_needed = True
+            action_reason = "Row 1 is empty (no values returned)."
+        elif all(cell == '' for cell in current_row1_values):
+            header_action_needed = True
+            action_reason = "Row 1 is blank (all cells are empty strings)."
+        elif current_row1_values != MASTER_HEADER:
+            header_action_needed = True
+            action_reason = (f"Row 1 header does not match expected MASTER_HEADER. "
+                             f"Old: {str(current_row1_values[:5]) if current_row1_values else 'N/A'}... ({len(current_row1_values)} cols). "
+                             f"New: {MASTER_HEADER[:5]}... ({len(MASTER_HEADER)} cols).")
+        # else: Header matches, header_action_needed remains False.
 
     except (gspread.exceptions.APIError, IndexError, gspread.exceptions.CellNotFound) as e:
-        # Catch errors typical of an empty sheet or a sheet where row 1 doesn't exist.
-        # Example APIError for empty sheet: "Requested entity was not found." when trying row_values(1)
-        # CellNotFound can also occur if trying .acell('A1') on a truly empty sheet.
-        # IndexError can occur if row_values(1) returns None or an empty list internally in some gspread versions.
-        
-        # Check if it's an API error about range/grid if possible, but be more general for empty sheets
-        is_likely_empty_sheet_error = False
-        if isinstance(e, gspread.exceptions.APIError):
-            if 'exceeds grid limits' in str(e).lower() or 'not found' in str(e).lower():
-                 is_likely_empty_sheet_error = True
-        elif isinstance(e, (IndexError, gspread.exceptions.CellNotFound)):
-            is_likely_empty_sheet_error = True
-
-        if is_likely_empty_sheet_error:
-            worksheet.update('A1', [MASTER_HEADER], value_input_option='USER_ENTERED')
-            st.info(f"INFO: Wrote MASTER_HEADER to Row 1 of empty worksheet '{worksheet.title}' (caught typical empty sheet error: {type(e).__name__}).")
-        else:
-            # Re-raise if it's a different kind of API error
-            st.error(f"ERROR: Google Sheets API error while ensuring header (unrelated to empty sheet): {e}")
-            raise
+        # Catches errors if row 1 effectively doesn't exist (e.g., brand new/truly empty sheet)
+        header_action_needed = True
+        action_reason = f"Could not read Row 1 (typical for new/empty sheet: {type(e).__name__})."
     except Exception as e:
-        st.error(f"ERROR: Unexpected error while ensuring header in Google Sheets: {e}")
-        raise
+        # Catch any other unexpected errors during header check
+        st.error(f"ERROR: Unexpected error while checking header: {e}. Attempting to write header as fallback.")
+        header_action_needed = True # Still attempt to write header
+        action_reason = f"Unexpected error during header check: {e}."
+
+    if header_action_needed:
+        st.info(f"GSheets Header Info: {action_reason} Writing/Overwriting MASTER_HEADER.")
+        try:
+            worksheet.update('A1', [MASTER_HEADER], value_input_option='USER_ENTERED')
+            st.success(f"SUCCESS: MASTER_HEADER written/updated in Row 1 of worksheet '{worksheet.title}'.")
+        except Exception as e_write:
+            st.error(f"ERROR: Failed to write/update MASTER_HEADER to Row 1: {e_write}")
+            # If header write fails, subsequent appends will likely be misaligned or fail.
+    # else:
+        # st.info("INFO: MASTER_HEADER already present and matches in Row 1.") # Can be verbose
 
 
 def write_batch_summary_and_items_to_sheet(
@@ -192,7 +182,7 @@ def write_batch_summary_and_items_to_sheet(
         main_text = item_detail.get("scraped_main_text", "")
         truncated_main_text = (main_text[:main_text_truncate_limit] + "..." if (main_text and len(main_text) > main_text_truncate_limit) else main_text)
         
-        item_row_dict: Dict[str, Any] = {header: "" for header in MASTER_HEADER} # Init with blanks
+        item_row_dict: Dict[str, Any] = {header: "" for header in MASTER_HEADER}
         item_row_dict["Record Type"] = "Item Detail"
         item_row_dict["Batch Timestamp"] = batch_timestamp
         
@@ -203,11 +193,11 @@ def write_batch_summary_and_items_to_sheet(
         item_row_dict["Search Result Snippet"] = item_detail.get("search_snippet", "")
         item_row_dict["Scraped Page Title"] = item_detail.get("scraped_title", "")
         
-        item_row_dict["Scraped Meta Description"] = item_detail.get("meta_description", "") # Corrected key
-        item_row_dict["Scraped OG Title"] = item_detail.get("og_title", "")                 # Corrected key
-        item_row_dict["Scraped OG Description"] = item_detail.get("og_description", "")     # Corrected key
+        item_row_dict["Scraped Meta Description"] = item_detail.get("meta_description", "")
+        item_row_dict["Scraped OG Title"] = item_detail.get("og_title", "")
+        item_row_dict["Scraped OG Description"] = item_detail.get("og_description", "")
         
-        item_row_dict["Content Type"] = item_detail.get("content_type", "") # Included "Content Type"
+        item_row_dict["Content Type"] = item_detail.get("content_type", "")
         item_row_dict["LLM Summary (Individual)"] = item_detail.get("llm_summary", "")
         item_row_dict["LLM Extracted Info (Query)"] = item_detail.get("llm_extracted_info", "")
         item_row_dict["LLM Extraction Query"] = extraction_query_text if item_detail.get("llm_extracted_info") else ""
@@ -228,7 +218,7 @@ def write_batch_summary_and_items_to_sheet(
 
 if __name__ == '__main__':
     st.set_page_config(layout="wide")
-    st.title("Data Storage Module Test (Google Sheets v1.5.2 - Header/Key Fixes)")
+    st.title("Data Storage Module Test (Google Sheets v1.5.3 - Assertive Header)")
     try:
         from config import load_config
         cfg_test = load_config()
@@ -246,21 +236,21 @@ if __name__ == '__main__':
                 st.success(f"Successfully connected to: {worksheet_test.spreadsheet.title} -> {worksheet_test.title}")
                 
                 if st.button("TEST: Ensure Master Header (Clear Sheet Manually First for best test)"):
-                    ensure_master_header(worksheet_test)
-                    st.write("Ensure Master Header call completed. Check sheet and logs.")
+                    ensure_master_header(worksheet_test) # Test the header ensuring logic
+                    st.write("Ensure Master Header call completed. Check sheet and logs in Streamlit UI.")
 
                 st.subheader("Test Data Writing")
                 if st.button("Write Sample Batch Data"):
-                    # First ensure header is there from this session
+                    # Ensure header is correctly placed before writing data
                     ensure_master_header(worksheet_test)
 
                     test_batch_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                    test_consolidated_summary = "Overall summary for 'sample testing' batch from v1.5.2."
-                    test_topic_context = "Sample Testing Keywords (v1.5.2)"
+                    test_consolidated_summary = "Overall summary for 'sample testing' batch from v1.5.3."
+                    test_topic_context = "Sample Testing Keywords (v1.5.3)"
                     test_item_list = [
                         {
                             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "keyword_searched": "sample testing",
-                            "url": "http://example.com/test1-v152", "search_title": "Test Page 1",
+                            "url": "http://example.com/test1-v153", "search_title": "Test Page 1",
                             "scraped_title": "Scraped Test Page 1", 
                             "meta_description": "This is a sample meta description for test1.",
                             "og_title": "OG Title for Test1",
@@ -271,7 +261,7 @@ if __name__ == '__main__':
                         },
                         {
                             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "keyword_searched": "sample testing",
-                            "url": "http://example.com/test2-v152", "search_title": "Test Page 2",
+                            "url": "http://example.com/test2-v153", "search_title": "Test Page 2",
                             "scraped_title": "Scraped Test Page 2",
                             "meta_description": "Another meta for test2.",
                             "og_title": "Test2 OpenGraph Title",
