@@ -1,26 +1,10 @@
 # app.py
-# Version 1.8.0: Updated call to llm_processor for enhanced consolidated summaries.
+# Version 1.8.1: Prioritize scored extractions for focused consolidated summaries.
 # Integrates with data_storage v1.5 for unified header and batch writing.
 
 """
 Streamlit Web Application for Keyword Search, Web Scraping, LLM Analysis, and Data Recording.
-
-This application allows users to:
-1. Input keywords for searching via Google Custom Search.
-2. Scrape metadata and main content from the search result URLs.
-3. Utilize a Large Language Model (LLM, e.g., Google Gemini) to:
-    a. Generate individual summaries for each scraped page.
-    b. Extract specific user-defined information from each page (with relevancy score).
-    c. Create a consolidated overview summary from all processed items in a batch,
-       potentially focused by the user's extraction query and item relevancy.
-4. Display the processed information and LLM insights in an interactive UI.
-5. Store the detailed results (including a batch summary row and individual item rows)
-   into a specified Google Sheet.
-6. Download the results (item details and consolidated summary) as an Excel file.
-
-The application is structured modularly, with separate Python files in the 'modules'
-directory handling configuration, search, scraping, LLM processing, and data storage.
-API keys and sensitive settings are managed via Streamlit Secrets (`.streamlit/secrets.toml`).
+(Rest of docstring as in v1.8.0)
 """
 
 import streamlit as st
@@ -31,6 +15,7 @@ from io import BytesIO
 from typing import List, Dict, Any, Optional 
 
 # --- Page Configuration ---
+# (Same as v1.8.0)
 st.set_page_config(
     page_title="Keyword Search & Analysis Tool",
     page_icon="🔮",
@@ -38,6 +23,7 @@ st.set_page_config(
 )
 
 # --- Load Application Configuration ---
+# (Same as v1.8.0)
 cfg: Optional[config.AppConfig] = config.load_config()
 if not cfg:
     st.error("CRITICAL: Application configuration failed to load. "
@@ -45,6 +31,7 @@ if not cfg:
     st.stop()
 
 # --- Session State Initialization ---
+# (Same as v1.8.0)
 default_session_state: Dict[str, Any] = {
     'processing_log': [],                   
     'results_data': [],                     
@@ -60,6 +47,7 @@ for key, default_value in default_session_state.items():
         st.session_state[key] = default_value
 
 # --- Google Sheets Setup ---
+# (Same as v1.8.0)
 if not st.session_state.sheet_connection_attempted_this_session:
     st.session_state.sheet_connection_attempted_this_session = True 
     if cfg.gsheets.service_account_info and \
@@ -80,6 +68,7 @@ if not st.session_state.sheet_connection_attempted_this_session:
         st.session_state.sheet_writing_enabled = False
 
 # --- UI Layout Definition ---
+# (Same as v1.8.0, including sidebar)
 st.title("Keyword Search & Analysis Tool 🔮")
 st.markdown("Enter keywords, configure options, and let the tool gather insights for you.")
 
@@ -114,7 +103,7 @@ with st.sidebar:
         "Generate LLM Summary?", value=True, key="llm_summary_checkbox", disabled=not llm_key_available
     )
     llm_extract_query_input_val: str = st.text_input(
-        "Specific info to extract with LLM (also guides focused consolidated summary):", # MODIFIED help text
+        "Specific info to extract with LLM (also guides focused consolidated summary):", 
         value=st.session_state.last_extract_query,
         placeholder="e.g., Key products, contact emails",
         key="llm_extract_text_input",
@@ -135,7 +124,7 @@ results_container = st.container()
 log_container = st.container()
 
 def to_excel(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes:
-    """ Converts DataFrames to Excel. (Implementation as provided previously) """
+    """ Converts DataFrames to Excel. (Same as v1.8.0) """
     output = BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df_item_details.to_excel(writer, index=False, sheet_name='Item_Details') 
@@ -144,6 +133,8 @@ def to_excel(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd
     return output.getvalue()
 
 if start_button_val:
+    # (Initialization and main processing loop setup as in v1.8.0)
+    # ...
     st.session_state.processing_log = ["Processing started..."]
     st.session_state.results_data = [] 
     st.session_state.consolidated_summary_text = None 
@@ -180,6 +171,8 @@ if start_button_val:
     progress_bar_placeholder = st.empty() 
 
     for keyword_val in keywords_list_val_runtime:
+        # (Keyword processing loop as in v1.8.0 - search, scrape, individual LLM calls)
+        # ...
         st.session_state.processing_log.append(f"\n🔎 Processing keyword: {keyword_val}")
         with progress_bar_placeholder.container(): 
              st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0,
@@ -309,6 +302,7 @@ if start_button_val:
     with progress_bar_placeholder.container():
         st.empty() 
 
+    # --- Automatic Consolidated Summary Generation ---
     consolidated_summary_text_for_batch: Optional[str] = None
     topic_for_consolidation_for_batch: str = "Multiple Topics / Not Specified" 
     if st.session_state.results_data and llm_key_available and \
@@ -319,22 +313,51 @@ if start_button_val:
             elif len(keywords_list_val_runtime) == 1: topic_for_consolidation_for_batch = keywords_list_val_runtime[0]
             else: topic_for_consolidation_for_batch = f"topics: {', '.join(keywords_list_val_runtime[:3])}{'...' if len(keywords_list_val_runtime) > 3 else ''}"
             
-            all_valid_llm_outputs: List[str] = [
-                item.get("llm_summary") or item.get("llm_extracted_info") 
-                for item in st.session_state.results_data
-                if (item.get("llm_summary") and not str(item.get("llm_summary", "")).lower().startswith("llm error") and not str(item.get("llm_summary", "")).lower().startswith("no text content")) or \
-                   (item.get("llm_extracted_info") and not str(item.get("llm_extracted_info", "")).lower().startswith("llm error") and not str(item.get("llm_extracted_info", "")).lower().startswith("no text content"))
-            ]
+            # --- MODIFIED LOGIC FOR all_valid_llm_outputs ---
+            all_valid_llm_outputs: List[str] = []
+            is_focused_consolidation_intended = bool(st.session_state.last_extract_query and st.session_state.last_extract_query.strip())
+
+            for item in st.session_state.results_data:
+                summary_text = item.get("llm_summary")
+                extraction_text = item.get("llm_extracted_info") # This contains the score
+
+                # Check validity of summary and extraction texts
+                is_summary_valid = summary_text and \
+                                   not str(summary_text).lower().startswith("llm error") and \
+                                   not str(summary_text).lower().startswith("no text content") and \
+                                   not str(summary_text).lower().startswith("llm_processor:")
+                is_extraction_valid = extraction_text and \
+                                      not str(extraction_text).lower().startswith("llm error") and \
+                                      not str(extraction_text).lower().startswith("no text content") and \
+                                      not str(extraction_text).lower().startswith("llm_processor:")
+                
+                chosen_text_for_consolidation = None
+                if is_focused_consolidation_intended:
+                    # Prefer extraction if focused and extraction is valid (it has the score)
+                    if is_extraction_valid: 
+                        chosen_text_for_consolidation = extraction_text
+                    # Fallback to summary if extraction isn't valid but summary is
+                    elif is_summary_valid: 
+                        chosen_text_for_consolidation = summary_text
+                else: 
+                    # General consolidation: prefer summary, fallback to extraction
+                    if is_summary_valid:
+                        chosen_text_for_consolidation = summary_text
+                    elif is_extraction_valid:
+                        chosen_text_for_consolidation = extraction_text
+                
+                if chosen_text_for_consolidation:
+                    all_valid_llm_outputs.append(chosen_text_for_consolidation)
+            # --- END OF MODIFIED LOGIC ---
             
             if not all_valid_llm_outputs:
                 st.warning("No valid individual LLM outputs (summaries or extractions) were available to create a consolidated overview.");
-                consolidated_summary_text_for_batch = "Error: No valid LLM outputs were available for consolidation."
-                st.session_state.processing_log.append("  ❌ No valid LLM outputs found for consolidation.")
+                consolidated_summary_text_for_batch = "Error: No valid LLM outputs were available for consolidation after internal filtering."
+                st.session_state.processing_log.append("  ❌ No valid LLM outputs found for consolidation after internal filtering.")
             else:
                 llm_api_key_to_use: Optional[str] = cfg.llm.google_gemini_api_key if cfg.llm.provider == "google" else cfg.llm.openai_api_key
                 llm_model_to_use: str = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize 
                 
-                # MODIFIED CALL: Pass the extraction query for focused consolidation
                 extraction_query_context_for_consol: Optional[str] = None
                 if st.session_state.last_extract_query and st.session_state.last_extract_query.strip():
                     extraction_query_context_for_consol = st.session_state.last_extract_query
@@ -345,11 +368,13 @@ if start_button_val:
                     api_key=llm_api_key_to_use,
                     model_name=llm_model_to_use, 
                     max_input_chars=cfg.llm.max_input_chars,
-                    extraction_query_for_consolidation=extraction_query_context_for_consol # NEWLY ADDED
+                    extraction_query_for_consolidation=extraction_query_context_for_consol 
                 )
                 st.session_state.processing_log.append(f"  Consolidated Overview Raw (first 150 chars): {str(consolidated_summary_text_for_batch)[:150] if consolidated_summary_text_for_batch else 'Failed/Empty'}...")
         st.session_state.consolidated_summary_text = consolidated_summary_text_for_batch 
 
+    # (Writing to Google Sheets and final status messages as in v1.8.0)
+    # ...
     if st.session_state.sheet_writing_enabled and st.session_state.gs_worksheet:
         if st.session_state.results_data or st.session_state.consolidated_summary_text:
             batch_process_timestamp_for_sheet: str = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -377,6 +402,11 @@ if start_button_val:
     else:
         st.warning("Processing complete, but no data was generated (no items scraped or LLM outputs produced).")
 
+
+# --- Display Sections (Download button, Consolidated Summary, Individual Results, Log) ---
+# (Same as v1.8.0 - includes Excel download, display of consolidated summary with note,
+#  display of individual results using st.text for scored extractions, and log)
+# ...
 with results_container:
     if st.session_state.results_data: 
         st.markdown("---") 
@@ -402,7 +432,7 @@ with results_container:
                 "Scraped OG Title": item_val_excel.get("scraped_og_title"),
                 "Scraped OG Description": item_val_excel.get("scraped_og_description"),
                 "LLM Summary (Individual)": item_val_excel.get("llm_summary"),
-                "LLM Extracted Info (Query)": item_val_excel.get("llm_extracted_info"), # This will now include score
+                "LLM Extracted Info (Query)": item_val_excel.get("llm_extracted_info"), 
                 "LLM Extraction Query": st.session_state.last_extract_query if item_val_excel.get("llm_extracted_info") else "",
                 "Scraping Error": item_val_excel.get("scraping_error"),
                 "Main Text (Truncated)": (str(item_val_excel.get("scraped_main_text", ""))[:10000] + "...") if item_val_excel.get("scraped_main_text") and len(str(item_val_excel.get("scraped_main_text", ""))) > 10000 else str(item_val_excel.get("scraped_main_text", ""))
@@ -422,18 +452,16 @@ with results_container:
             elif len(last_run_keywords_excel) == 1: topic_display_excel = last_run_keywords_excel[0]
             else: topic_display_excel = f"Topics: {', '.join(last_run_keywords_excel[:3])}{'...' if len(last_run_keywords_excel) > 3 else ''}"
             
-            # Determine if the consolidated summary was focused or general for Excel notes
             excel_consolidation_note = "General Overview"
             if st.session_state.last_extract_query and st.session_state.last_extract_query.strip():
                  excel_consolidation_note = f"Focused Overview based on query: '{st.session_state.last_extract_query}' (using items with score >=3 if applicable)"
-
 
             consolidated_data_excel: Dict[str, List[Any]] = {
                 "Batch Timestamp": [time.strftime("%Y-%m-%d %H:%M:%S")],
                 "Topic/Keywords": [topic_display_excel],
                 "Consolidated Summary": [st.session_state.consolidated_summary_text],
                 "Source Items Count": [len(st.session_state.results_data)],
-                "Consolidation Note": [excel_consolidation_note] # Added note
+                "Consolidation Note": [excel_consolidation_note] 
             }
             df_consolidated_summary_excel = pd.DataFrame(consolidated_data_excel)
 
@@ -454,13 +482,11 @@ with results_container:
     if st.session_state.get('consolidated_summary_text'):
         st.markdown("---")
         st.subheader("✨ Consolidated Overview Result")
-        # Add note about focus if applicable
         if st.session_state.last_extract_query and st.session_state.last_extract_query.strip() and \
            not str(st.session_state.consolidated_summary_text).lower().startswith("llm_processor: no individual items met the minimum relevancy score"):
             st.caption(f"This overview is focused on your query: '{st.session_state.last_extract_query}', using relevant items (score >= 3).")
         elif str(st.session_state.consolidated_summary_text).lower().startswith("llm_processor: no individual items met the minimum relevancy score"):
              st.warning(f"Could not generate a focused consolidated overview for '{st.session_state.last_extract_query}' as no items met the relevancy criteria. The message above indicates this.")
-
 
         with st.container(border=True):
             st.markdown(st.session_state.consolidated_summary_text)
@@ -498,10 +524,9 @@ with results_container:
                         with st.container(border=True):
                             st.markdown(f"**Summary (LLM):**")
                             st.markdown(item_val_display["llm_summary"])
-                    if item_val_display.get("llm_extracted_info"): # This now contains the score as the first line
+                    if item_val_display.get("llm_extracted_info"): 
                         with st.container(border=True):
                             st.markdown(f"**Extracted Info (LLM) for '{st.session_state.last_extract_query}':**")
-                            # Use st.text to preserve newline formatting for the score line
                             st.text(item_val_display["llm_extracted_info"]) 
                 st.caption(f"Item Timestamp: {item_val_display.get('timestamp')}")
 
@@ -512,4 +537,6 @@ with log_container:
             st.code(log_text, language=None)
 
 st.markdown("---")
-st.caption("Keyword Search & Analysis Tool v1.8.0")
+st.caption("Keyword Search & Analysis Tool v1.8.1") # Version updated
+
+# end of app.py
