@@ -23,13 +23,13 @@ Docstring: None
 Module Docstring: Handles data storage operations, primarily focused on Google Sheets integration.
 
 ### def get_gspread_worksheet(service_account_info: Optional[Dict[str, Any]], spreadsheet_id: Optional[str], spreadsheet_name: Optional[str], worksheet_name: str = 'Sheet1') -> Optional[gspread.Worksheet]
-Docstring: Authorizes gspread client with service account info and returns the specified worksheet.
+Docstring: None
 
 ### def ensure_master_header(worksheet: gspread.Worksheet) -> None
 Docstring: Ensures the MASTER_HEADER is present in Row 1 of the worksheet.
 
 ### def write_batch_summary_and_items_to_sheet(worksheet: gspread.Worksheet, batch_timestamp: str, consolidated_summary: Optional[str], topic_context: str, item_data_list: List[Dict[str, Any]], extraction_query_text: Optional[str] = None, main_text_truncate_limit: int = 10000) -> bool
-Docstring: Writes a batch summary row followed by individual item detail rows to the Google Sheet.
+Docstring: None
 
 ---
 
