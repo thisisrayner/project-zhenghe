@@ -12,16 +12,16 @@ Docstring: None
 ---
 
 ## File: modules/excel_handler.py
-Module Docstring: Handles the creation and formatting of Excel files for exporting results.
+Module Docstring: Handles the creation and formatting of Excel files for exporting KSAT results.
 
-### def prepare_item_details_df(results_data: List[Dict[str, Any]], last_extract_query: str) -> pd.DataFrame
+### def prepare_item_details_df(results_data: List[Dict[str, Any]], last_extract_query: Optional[str]) -> pd.DataFrame
 Docstring: Prepares a Pandas DataFrame for the item details sheet in the Excel export.
 
 ### def prepare_consolidated_summary_df(consolidated_summary_text: Optional[str], results_data_count: int, last_keywords: str, last_extract_query: Optional[str], batch_timestamp: str) -> Optional[pd.DataFrame]
 Docstring: Prepares a Pandas DataFrame for the consolidated summary sheet.
 
 ### def to_excel_bytes(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes
-Docstring: Converts DataFrames into an Excel file (bytes).
+Docstring: Converts DataFrame(s) into an Excel file (in bytes).
 
 ---
 
