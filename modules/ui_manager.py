@@ -1,8 +1,8 @@
 # modules/ui_manager.py
-# Version 1.1.2:
-# 1. Number emoji reflects highest score from Q1 or Q2.
-# 2. Removed ✨ emoji; 🤖 solely indicates LLM-generated keyword.
-# 3. Ensured 🤖 appears after the score emoji (e.g., 5️⃣ 🤖).
+# Version 1.1.3:
+# 1. Updated labels for extraction query inputs to "Main Query 1" and "Additional Query 2".
+# (Retains emoji logic from v1.1.2: Number emoji reflects highest score from Q1 or Q2,
+#  🤖 solely indicates LLM-generated keyword, 🤖 appears after score emoji)
 """
 Manages the Streamlit User Interface elements, layout, and user inputs.
 """
@@ -11,6 +11,7 @@ import streamlit as st
 from typing import Dict, Any, Optional, Tuple, List, Set
 from modules import config # For AppConfig type hint
 
+# _parse_score_from_extraction and get_display_prefix_for_item remain the same as v1.1.2
 def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]:
     """Helper function to parse relevancy score from an LLM extraction string."""
     score: Optional[int] = None
@@ -20,40 +21,34 @@ def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
             score_str = score_line.split("Relevancy Score: ")[1].split('/')[0]
             score = int(score_str)
         except (IndexError, ValueError):
-            pass # Score remains None
+            pass 
     return score
 
-# --- Helper function for Display Logic ---
-def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str: # Removed llm_generated_keywords_set_for_display as arg
+def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str:
     """
     Determines the number emoji prefix for an item based on the HIGHEST relevancy score
     from either Extraction Query 1 or Extraction Query 2.
     Returns only the number emoji (e.g., "5️⃣ ") or an empty string.
     """
     prefix = ""
-    
     score_q1 = _parse_score_from_extraction(item_data.get("llm_extracted_info_q1"))
     score_q2 = _parse_score_from_extraction(item_data.get("llm_extracted_info_q2"))
-
     highest_score: Optional[int] = None
-    if score_q1 is not None and score_q2 is not None:
-        highest_score = max(score_q1, score_q2)
-    elif score_q1 is not None:
-        highest_score = score_q1
-    elif score_q2 is not None:
-        highest_score = score_q2
-
+    if score_q1 is not None and score_q2 is not None: highest_score = max(score_q1, score_q2)
+    elif score_q1 is not None: highest_score = score_q1
+    elif score_q2 is not None: highest_score = score_q2
     if highest_score is not None:
-        if highest_score == 5: prefix = "5️⃣" # No trailing space here, will be added later if needed
+        if highest_score == 5: prefix = "5️⃣"
         elif highest_score == 4: prefix = "4️⃣"
         elif highest_score == 3: prefix = "3️⃣"
-        # Scores below 3 do not get a prefix
-            
     return prefix
 
 
 def render_sidebar(cfg: config.AppConfig, current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]:
-    # ... (render_sidebar remains the same as v1.1.1) ...
+    """
+    Renders the sidebar UI elements and returns user inputs.
+    Now returns a list of extraction queries.
+    """
     with st.sidebar:
         st.subheader("Search Parameters")
         keywords_input_val: str = st.text_input(
@@ -81,31 +76,27 @@ def render_sidebar(cfg: config.AppConfig, current_gsheets_error: Optional[str], 
         last_extract_queries = st.session_state.get('last_extract_queries', ["", ""])
         if not isinstance(last_extract_queries, list) or len(last_extract_queries) < 2:
             last_extract_queries = ["", ""]
-        tooltip_text = "You can type in keywords to focus the analysis or ask a question."
+        tooltip_text = "You can type in keywords to focus the analysis or ask a question. Main Query 1 drives the primary relevancy score and focused consolidated summary."
 
         llm_extract_query_1_input_val: str = st.text_input(
-            "Extraction Query 1 (drives focused summary if its score is high):", # Clarified label
+            "Main Query 1:", # MODIFIED: Updated label
             value=last_extract_queries[0],
             placeholder="e.g., Key methodologies, primary conclusions",
             key="llm_extract_q1_input",
-            help=tooltip_text
+            help=tooltip_text 
         )
         llm_extract_query_2_input_val: str = st.text_input(
-            "Extraction Query 2 (optional additional extraction):",
+            "Additional Query 2:", # MODIFIED: Updated label
             value=last_extract_queries[1],
             placeholder="e.g., Mentioned limitations, future work",
             key="llm_extract_q2_input",
-            help=tooltip_text
+            help="Optional: ask a different question or look for other specific keywords." # Slightly different tooltip for Q2
         )
         
-        llm_extract_queries_input_vals: List[str] = [] # This is not directly used for return but for internal logic if needed
-        if llm_extract_query_1_input_val.strip():
-            llm_extract_queries_input_vals.append(llm_extract_query_1_input_val.strip())
-        if llm_extract_query_2_input_val.strip():
-            llm_extract_queries_input_vals.append(llm_extract_query_2_input_val.strip())
-        returned_queries = [llm_extract_query_1_input_val, llm_extract_query_2_input_val] # Return typed values for session state
+        returned_queries = [llm_extract_query_1_input_val, llm_extract_query_2_input_val]
         
         st.markdown("---")
+        # ... (rest of sidebar: button logic, captions remain the same) ...
         button_streamlit_type = "secondary"
         button_disabled = True
         button_help_text = current_gsheets_error or "Google Sheets connection status undetermined."
@@ -128,9 +119,8 @@ def render_sidebar(cfg: config.AppConfig, current_gsheets_error: Optional[str], 
 
     return keywords_input_val, num_results_wanted_per_keyword, returned_queries, start_button_val
 
-
+# ... (apply_custom_css remains the same) ...
 def apply_custom_css():
-    # ... (remains the same as v1.1.1) ...
     green_button_css = """
     <style>
     div[data-testid="stButton"] > button:not(:disabled)[kind="primary"] {
@@ -149,71 +139,51 @@ def apply_custom_css():
     """
     st.markdown(green_button_css, unsafe_allow_html=True)
 
-
+# ... (display_consolidated_summary remains the same, its caption logic for Q1 focus is still relevant) ...
 def display_consolidated_summary():
-    # ... (remains the same as v1.1.1 - primary query (q1) still drives focus note) ...
     if st.session_state.get('consolidated_summary_text'):
         st.markdown("---")
         st.subheader("✨ Consolidated Overview Result")
         summary_text = st.session_state.consolidated_summary_text
         last_extract_queries = st.session_state.get('last_extract_queries', [""])
-        primary_extract_query = last_extract_queries[0] if last_extract_queries else "" # Q1 is the primary for focus
+        primary_extract_query = last_extract_queries[0] if last_extract_queries else "" 
         if primary_extract_query and primary_extract_query.strip() and \
            not str(summary_text).lower().startswith("llm_processor: no individual items met the minimum relevancy score"):
-            st.caption(f"Overview focused on insights related to Q1: '{primary_extract_query}'.")
+            st.caption(f"Overview focused on insights related to Main Query 1: '{primary_extract_query}'.") # Clarified caption
         elif str(summary_text).lower().startswith("llm_processor: no individual items met the minimum relevancy score"):
             if primary_extract_query and primary_extract_query.strip():
-                 st.warning(f"Could not generate focused overview for Q1 ('{primary_extract_query}'). No items met minimum relevancy for Q1.")
+                 st.warning(f"Could not generate focused overview for Main Query 1 ('{primary_extract_query}'). No items met minimum relevancy for Main Query 1.") # Clarified warning
             else: 
-                 st.warning(f"Could not generate focused overview. No items met minimum relevancy (Q1).")
+                 st.warning(f"Could not generate focused overview. No items met minimum relevancy for Main Query 1.")
         with st.container(border=True):
             st.markdown(summary_text)
 
+# ... (display_individual_results remains the same as v1.1.2) ...
 def display_individual_results():
-    """Displays individual processed items in expanders if available in session state."""
     if st.session_state.get('results_data'):
         st.subheader(f"📊 Individually Processed Content ({len(st.session_state.results_data)} item(s))")
-        
         llm_gen_kws_for_display = st.session_state.get('llm_generated_keywords_set_for_display', set())
         last_extract_queries_for_display = st.session_state.get('last_extract_queries', ["", ""])
-
         for i, item_val_display in enumerate(st.session_state.results_data):
             display_title_ui: str = item_val_display.get('scraped_title') or \
                                     item_val_display.get('og_title') or \
                                     item_val_display.get('search_title') or \
                                     "Untitled"
-            
-            score_emoji_prefix = get_display_prefix_for_item(item_val_display) # Gets highest score emoji (e.g., "5️⃣")
-            
+            score_emoji_prefix = get_display_prefix_for_item(item_val_display)
             content_type_marker = "📄" if 'pdf' in item_val_display.get('content_type', '').lower() else ""
-            
             is_llm_keyword_source = item_val_display.get('keyword_searched','').lower() in llm_gen_kws_for_display
             llm_query_marker = "🤖" if is_llm_keyword_source else ""
-
-            # Construct the full prefix: Score [space if score exists] Robot [space if robot exists and score does not]
             full_prefix = score_emoji_prefix
-            if score_emoji_prefix and llm_query_marker:
-                full_prefix += " " + llm_query_marker # e.g., "5️⃣ 🤖"
-            elif llm_query_marker: # Only robot, no score emoji
-                full_prefix = llm_query_marker # e.g., "🤖"
-            # If only score_emoji_prefix, it's already set. If neither, full_prefix is "".
-
-            # Add a space after the emojis if there are any, before content_type_marker
-            if full_prefix:
-                full_prefix += " "
-
-
+            if score_emoji_prefix and llm_query_marker: full_prefix += " " + llm_query_marker
+            elif llm_query_marker: full_prefix = llm_query_marker
+            if full_prefix: full_prefix += " "
             expander_title_ui = (
                 f"{full_prefix}{content_type_marker}"
                 f"{item_val_display.get('keyword_searched','Unknown Keyword')} | "
                 f"{display_title_ui} ({item_val_display.get('url', 'No URL')})"
             )
-            # Remove potential double spaces if content_type_marker is empty but full_prefix had a trailing space
             expander_title_ui = expander_title_ui.replace("  ", " ").strip()
-
-
             with st.expander(expander_title_ui):
-                # ... (rest of individual item display logic remains same as v1.1.1) ...
                 st.markdown(f"**URL:** [{item_val_display.get('url')}]({item_val_display.get('url')})")
                 st.caption(f"Content Type: {item_val_display.get('content_type', 'N/A')}")
                 if item_val_display.get('scraping_error'):
@@ -248,18 +218,18 @@ def display_individual_results():
                 for q_idx in range(2): 
                     query_text = last_extract_queries_for_display[q_idx] if q_idx < len(last_extract_queries_for_display) else ""
                     extracted_info_key = f"llm_extracted_info_q{q_idx+1}"
+                    query_label = f"Main Query 1 ('{query_text}')" if q_idx == 0 else f"Additional Query 2 ('{query_text}')"
                     if query_text and query_text.strip() and item_val_display.get(extracted_info_key):
                         has_llm_insights = True
                         extracted_content = item_val_display[extracted_info_key]
-                        insights_html += f"<div style='border:1px solid #e6e6e6; padding:10px; margin-bottom:10px;'><strong>Extracted Info for Q{q_idx+1} ('{query_text}'):</strong><br><pre style='white-space: pre-wrap; word-wrap: break-word;'>{extracted_content}</pre></div>"
+                        insights_html += f"<div style='border:1px solid #e6e6e6; padding:10px; margin-bottom:10px;'><strong>Extracted Info for {query_label}:</strong><br><pre style='white-space: pre-wrap; word-wrap: break-word;'>{extracted_content}</pre></div>"
                 insights_html += "</div>"
                 if has_llm_insights:
                     st.markdown(insights_html, unsafe_allow_html=True)
                 st.caption(f"Item Timestamp: {item_val_display.get('timestamp')}")
 
-
+# ... (display_processing_log remains the same) ...
 def display_processing_log():
-    # ... (remains the same as v1.1.1) ...
     if st.session_state.get('processing_log'):
         with st.expander("📜 View Processing Log", expanded=False):
             st.code("\n".join(st.session_state.processing_log), language=None)
