@@ -96,6 +96,23 @@ Docstring: Generates a list of new search queries based on original keywords and
 
 ---
 
+## File: modules/ui_manager.py
+Module Docstring: Manages the Streamlit User Interface components, including sidebar,
+
+### def get_display_prefix_for_item(item_data: Dict[str, Any], llm_generated_keywords: Set[str]) -> str
+Docstring: Determines the emoji prefix for an item based on its relevancy score
+
+### def render_sidebar(cfg: config.AppConfig) -> Tuple[str, int, str, bool]
+Docstring: Renders the sidebar UI components and returns their current values.
+
+### def apply_custom_css()
+Docstring: Applies custom CSS for styling elements like the primary button.
+
+### def display_main_content(results_container, log_container)
+Docstring: Displays the main content area including results and logs.
+
+---
+
 ## File: modules/_init_.py
 Module Docstring: None
 
