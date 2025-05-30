@@ -1,34 +1,37 @@
-Okay, I've updated the README.md to reflect the new functionalities and added a section specifically for agents working on this codebase.
-
-Here's the updated README.md:
-
       
 # Streamlit Keyword Search & Analysis Tool 
 
-This Streamlit application allows users to input keywords, perform Google searches, extract metadata and main content from the resulting URLs, and leverage a Large Language Model (LLM) – currently configured for **Google Gemini** – to summarize content, extract specific information (with relevancy scoring), generate a consolidated overview, and even suggest alternative search queries. Results are displayed in the app, can be downloaded as an Excel file, and are also recorded to a Google Sheet.
+This Streamlit application empowers users to input keywords, perform Google searches (enhanced by optional LLM-generated queries), extract metadata and main content from resulting URLs (supporting HTML and PDF text), and leverage a Large Language Model (LLM) – currently configured for **Google Gemini** – to summarize content, extract specific information with relevancy scoring, and generate a consolidated overview. Results are displayed interactively with visual cues for relevance, can be downloaded as an Excel file, and are also recorded to a Google Sheet.
 
 The project is designed with modularity to facilitate future enhancements, including the potential addition of a separate API layer for programmatic access.
 
 ## Features
 
-*   **Keyword Search:** Perform Google searches for multiple keywords.
+*   **Keyword Search:**
+    *   Perform Google searches for multiple user-defined keywords (comma-separated, "Enter" to commit input).
     *   **LLM-Enhanced Queries:** Optionally uses an LLM to generate additional, related search queries based on the user's initial input and specific information goals, aiming to broaden the search scope effectively.
 *   **Configurable Search Depth:** Specify the number of desired successfully scraped results per keyword. Oversampling is used to improve success rates.
-*   **Metadata Extraction:** Fetches URL, page title, meta description, and OpenGraph tags.
-*   **Main Content Extraction:** Uses `trafilatura` to extract the primary text content from web pages.
+*   **Content Extraction:**
+    *   **HTML:** Fetches URL, page title, meta description, and OpenGraph tags. Uses `trafilatura` for main text extraction.
+    *   **PDF:** Extracts document title (from metadata or filename) and full text content from PDF documents using `PyMuPDF`.
 *   **LLM Integration (Google Gemini):**
-    *   **Individual Summaries:** Generates summaries of each successfully scraped web page's content.
-    *   **Specific Information Extraction & Relevancy Scoring:** Extracts user-defined information from page content and an LLM-assigned relevancy score (1/5 to 5/5) indicating how well the page content matches the extraction query.
+    *   **Individual Summaries:** Generates summaries of each successfully scraped web page's/document's content.
+    *   **Specific Information Extraction & Relevancy Scoring:** Extracts user-defined information from page/document content. The LLM also assigns a relevancy score (1/5 to 5/5) indicating how well the content matches the extraction query.
     *   **Consolidated Overview:** Automatically generates a synthesized overview. 
         *   If a specific information query was provided by the user for extraction, the consolidated summary will focus on that query, using only individual item outputs that achieved a relevancy score of 3/5 or higher.
-        *   If no specific information query was used for extraction, a general consolidated summary is created from all valid individual LLM outputs.
+        *   If no specific information query was used, a general consolidated summary is created from all valid individual LLM outputs.
+*   **Interactive UI & Results Display:**
+    *   Built with Streamlit for easy input, configuration, and viewing of results and processing logs.
+    *   **Visual Relevancy Cues:** Individually processed items are prefixed with emojis (e.g., 5️⃣, 4️⃣, ✨3️⃣, 3️⃣) in the results list to quickly identify items with relevancy scores of 3/5 or higher. Results from LLM-generated queries are also marked.
 *   **Google Sheets Integration:**
     *   Stores detailed results, including a batch summary row and individual item rows, in a structured Google Sheet.
-    *   Uses a master header for clarity.
-*   **Download Results:** Option to download all processed item details and the consolidated summary into an Excel (`.xlsx`) file with separate sheets.
-*   **Interactive UI:** Built with Streamlit for easy input, configuration, and viewing of results and processing logs.
-*   **Modular Design:** Code is separated into functional modules for better maintainability and future expansion.
-*   **Configuration Management:** API keys and settings are managed via Streamlit Secrets (`secrets.toml`).
+*   **Download Results:** Option to download all processed item details and the consolidated summary into an Excel (`.xlsx`) file.
+*   **Safeguards & Performance:**
+    *   **Retry Mechanisms:** Implemented for Google Custom Search API calls and LLM API calls to handle transient errors and rate limits using exponential backoff.
+    *   **LLM Caching:** Caches results from LLM functions (`@st.cache_data`) to improve performance on repeated identical requests and reduce API calls.
+*   **Modular Design & Configuration:**
+    *   Code is separated into functional modules.
+    *   API keys and settings are managed via Streamlit Secrets (`secrets.toml`).
 
 ## Project Structure
 
@@ -43,9 +46,9 @@ streamlit-search-tool/
 ├── modules/
 │ ├── init.py
 │ ├── config.py # Handles loading secrets & configurations
-│ ├── search_engine.py # Google Search API interactions
-│ ├── scraper.py # Web fetching & content/metadata extraction
-│ ├── llm_processor.py # LLM interactions (Gemini: summaries, extractions, query generation)
+│ ├── search_engine.py # Google Search API interactions (with retries)
+│ ├── scraper.py # Web fetching & content/metadata extraction (HTML & PDF)
+│ ├── llm_processor.py # LLM interactions (Gemini: summaries, extractions, query gen, caching)
 │ └── data_storage.py # Google Sheets interactions
 ├── .streamlit/
 │ └── secrets.toml # Storing API keys & sensitive info
@@ -62,43 +65,25 @@ Before you begin, ensure you have met the following requirements:
 *   **Google Cloud Platform (GCP) Project:**
     *   "Google Custom Search API" enabled.
     *   "Google Sheets API" enabled.
-    *   "Google Drive API" enabled (required by `gspread` for full sheet access functionality).
-    *   "Generative Language API" (or "Vertex AI API" if using Gemini through Vertex) enabled for LLM features.
+    *   "Google Drive API" enabled (required by `gspread`).
+    *   "Generative Language API" (or "Vertex AI API") enabled for LLM features.
 *   **Google Custom Search Engine (CSE):**
-    *   Create one at [Programmable Search Engine](https://programmablesearchengine.google.com/).
-    *   Note your **Search engine ID (CX)**.
-*   **Google API Key (for Custom Search):**
-    *   Create an API key in your GCP project with access to the Custom Search API.
-*   **Google Gemini API Key (for LLM features):**
-    *   Generate an API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
-*   **Google Service Account for Google Sheets:**
-    *   Create a service account in GCP.
-    *   Download its JSON key file.
-    *   Share your target Google Sheet (and ensure it exists) with the service account's email address (grant "Editor" permissions).
+    *   Create one at [Programmable Search Engine](https://programmablesearchengine.google.com/). Note your **Search engine ID (CX)**.
+*   **Google API Key (for Custom Search).**
+*   **Google Gemini API Key (for LLM features).**
+*   **Google Service Account for Google Sheets:** (JSON key file, share Sheet with service account email).
 
 ## Setup & Installation
 
-1.  **Clone the repository (if applicable):**
-    ```bash
-    git clone <your-repository-url>
-    cd streamlit-search-tool
-    ```
-
-2.  **Create a virtual environment (recommended):**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
-    ```
-
+1.  **Clone the repository (if applicable).**
+2.  **Create a virtual environment (recommended).**
 3.  **Install dependencies:**
-    Ensure your `requirements.txt` includes `google-generativeai`, `pandas`, `openpyxl`, `streamlit`, and `trafilatura` among others.
+    Ensure your `requirements.txt` includes `google-generativeai`, `pandas`, `openpyxl`, `streamlit`, `trafilatura`, `PyMuPDF`, `google-api-python-client`, and `beautifulsoup4`.
     ```bash
     pip install -r requirements.txt
     ```
-
-4.  **Configure Secrets:**
-    *   Create a file named `.streamlit/secrets.toml`.
-    *   Add your API keys and other sensitive information.
+4.  **Configure Secrets (`.streamlit/secrets.toml`):**
+    (Example structure as provided previously, ensure all necessary keys are present).
 
     **Example `secrets.toml` structure:**
     ```toml
@@ -107,38 +92,25 @@ Before you begin, ensure you have met the following requirements:
     CSE_ID = "YOUR_CUSTOM_SEARCH_ENGINE_ID"
 
     # LLM Configuration (using Google Gemini by default)
-    LLM_PROVIDER = "google" # Can be "google" or "openai" (if OpenAI logic is retained/added)
+    LLM_PROVIDER = "google" 
     GOOGLE_GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_FROM_AI_STUDIO"
-    GOOGLE_GEMINI_MODEL = "models/gemini-1.5-flash-latest" # Or another model like "models/gemini-pro"
-
-    # Optional: For OpenAI if you switch LLM_PROVIDER
-    # OPENAI_API_KEY = "sk-YOUR_OPENAI_API_KEY"
-    # OPENAI_MODEL_SUMMARIZE = "gpt-3.5-turbo" # Example model
+    GOOGLE_GEMINI_MODEL = "models/gemini-1.5-flash-latest" 
 
     # Google Sheets Integration
-    SPREADSHEET_ID = "YOUR_GOOGLE_SHEET_ID_FROM_ITS_URL" # More robust
-    # SPREADSHEET_NAME = "Your Target Google Sheet Name" # Fallback if ID is not used
-    WORKSHEET_NAME = "Sheet1" # Or your target worksheet tab name
+    SPREADSHEET_ID = "YOUR_GOOGLE_SHEET_ID_FROM_ITS_URL" 
+    WORKSHEET_NAME = "Sheet1" 
 
     [gcp_service_account]
     type = "service_account"
     project_id = "your-gcp-project-id"
     private_key_id = "your-private-key-id"
-    private_key = """-----BEGIN PRIVATE KEY-----
-    YOUR_VERY_LONG_PRIVATE_KEY_CONTENT_WITH_NEWLINES_PRESERVED
-    -----END PRIVATE KEY-----"""
+    private_key = """-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_CONTENT\n-----END PRIVATE KEY-----\n"""
     client_email = "your-service-account-email@your-gcp-project-id.iam.gserviceaccount.com"
     client_id = "your-client-id"
-    auth_uri = "https://accounts.google.com/o/oauth2/auth"
-    token_uri = "https://oauth2.googleapis.com/token"
-    auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-    client_x509_cert_url = "PASTE_client_x509_cert_url_HERE"
-    # universe_domain = "googleapis.com" # If present in your service account JSON
+    # ... (other service account fields as in your JSON key)
     ```
 
 ## Running the Application
-
-Once the setup is complete, run the Streamlit application:
 
 ```bash
 streamlit run app.py
@@ -149,36 +121,30 @@ IGNORE_WHEN_COPYING_START
 Use code with caution.
 IGNORE_WHEN_COPYING_END
 
-Your default web browser should open to the application (usually http://localhost:8501).
+Access at http://localhost:8501.
 Usage
 
     Navigate to the application URL.
 
-    Enter initial search keywords in the "Keywords (comma-separated)" field. Press Enter to ensure the input is registered.
+    Enter initial search keywords in the "Keywords (comma-separated)" field. Press Enter.
 
     Configure "Number of successfully scraped results per keyword".
 
-    Optionally, enable "✨ Enhance with LLM-generated search queries?" to have the LLM suggest additional search terms.
+    Optionally, enable "✨ Enhance with LLM-generated search queries?".
 
-    Optionally, enable "Generate LLM Summary?" for individual page summaries.
+    Optionally, enable "Generate LLM Summary?".
 
-    Optionally, provide a query in "Specific info to extract with LLM...". This will:
+    Optionally, provide a query in "Specific info to extract with LLM...". This influences extraction, relevancy scoring, LLM query generation context, and the focus of the consolidated summary.
 
-        Trigger extraction and relevancy scoring for individual items.
+    Click "🚀 Start Search & Analysis".
 
-        Guide the LLM if "Enhance with LLM-generated search queries" is active.
+    View progress and results. Expanders for individual items will show emoji prefixes (5️⃣, 4️⃣, ✨3️⃣, 3️⃣) for relevancy scores >= 3 and markers for results from LLM-generated queries or PDFs (📄).
 
-        Focus the "Consolidated Overview Result" on this query, using only items with a relevancy score of 3/5 or higher.
+    Expand the processing log for details.
 
-    Click the "🚀 Start Search & Analysis" button.
+    If Google Sheets is set up, data is written there.
 
-    View the progress, individual item results (including metadata, LLM summaries, and scored extractions), and the automatically generated consolidated overview in the main panel.
-
-    The processing log can be expanded to see detailed steps, including any LLM-generated queries.
-
-    If Google Sheets integration is configured successfully, a batch summary row followed by individual item data rows will be written to your specified sheet.
-
-    A "📥 Download Results as Excel" button will appear below the results, allowing you to download an Excel file with "Item Details" and "Consolidated Summary" sheets.
+    Download results via the Excel download button.
 
 Important Note for Contributing Agents
 
@@ -195,29 +161,10 @@ When modifying the codebase (app.py, modules/*.py):
 Adherence to these guidelines is crucial for maintaining clarity and ensuring the primary user can integrate changes smoothly.
 Future API Layer Plan
 
-The modular design of this project (modules/ directory) is intended to support the future development of a separate API layer (e.g., using FastAPI or Flask). This API would:
-
-    Reuse the core logic functions from the modules/ directory.
-
-    Provide HTTP endpoints for programmatic access to the tool's capabilities.
-
-    Allow integration with tools like n8n, Make.com, or custom scripts.
-
+The modular design supports future API development (e.g., FastAPI/Flask) for programmatic access and integration with other tools.
 Contributing
 
 [Details on how to contribute to the project, if applicable.]
 License
 
 [Specify the license for your project, e.g., MIT License.]
-
-      
-**Key changes in the README:**
-*   Updated the main description and "Features" section to include:
-    *   LLM-Enhanced Query Generation.
-    *   Relevancy Scoring for extractions.
-    *   Conditional logic for the Consolidated Overview based on the extraction query and scores.
-*   Updated the `app.py` description in "Project Structure".
-*   Updated the "Usage" section to reflect the new LLM query generation option and the behavior of the focused consolidated summary.
-*   **Added the "Important Note for Contributing Agents" section** with your explicit requirements.
-
-This README should now be comprehensive and provide clear instructions for both users and future contributing agents.
