@@ -3,12 +3,6 @@
 ## File: app.py
 Module Docstring: Streamlit Web Application for Keyword Search & Analysis Tool (KSAT).
 
-### def get_display_prefix_for_item(item_data: Dict[str, Any], llm_generated_keywords: Set[str]) -> str
-Docstring: None
-
-### def to_excel(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes
-Docstring: None
-
 ---
 
 ## File: modules/excel_handler.py
