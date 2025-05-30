@@ -1,6 +1,6 @@
 # Codebase Summary (v1.1)
 
-Error parsing /home/runner/work/project-zhenghe/project-zhenghe/app.py: invalid syntax (app.py, line 199)
+Error parsing /home/runner/work/project-zhenghe/project-zhenghe/app.py: invalid syntax (app.py, line 286)
 ## File: modules/config.py
 Module Docstring: Configuration management for the Streamlit Keyword Search & Analysis Tool.
 
