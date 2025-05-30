@@ -1,16 +1,6 @@
 # Codebase Summary (v1.1)
 
-## File: app.py
-Module Docstring: Streamlit Web Application for Keyword Search & Analysis Tool (KSAT).
-
-### def get_display_prefix_for_item(item_data: Dict[str, Any], llm_generated_keywords: Set[str]) -> str
-Docstring: None
-
-### def to_excel(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes
-Docstring: None
-
----
-
+Error parsing /home/runner/work/project-zhenghe/project-zhenghe/app.py: invalid syntax (app.py, line 212)
 ## File: modules/config.py
 Module Docstring: Configuration management for the Streamlit Keyword Search & Analysis Tool.
 
