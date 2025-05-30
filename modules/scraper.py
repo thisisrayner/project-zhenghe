@@ -1,141 +1,223 @@
 # modules/scraper.py
-# Version 1.1: Enhanced docstrings, type hinting, and added comments.
+# Version 1.2.0: Added PDF text extraction using PyMuPDF. Based on original v1.1.
+# Handles HTML metadata/text and PDF text/metadata title.
 
 """
 Web scraping module for fetching and extracting content from URLs.
 
 This module uses 'requests' to fetch web page content, 'BeautifulSoup'
 for parsing HTML and extracting metadata (like title, description, OpenGraph tags),
-and 'trafilatura' for extracting the main textual content of an article.
+'trafilatura' for extracting the main textual content of an HTML article,
+and 'PyMuPDF' (fitz) for extracting text from PDF documents.
 """
 
 import requests
 from bs4 import BeautifulSoup
 import trafilatura
-from typing import TypedDict, Optional, Dict # For type hinting
+from typing import TypedDict, Optional, Dict, List # Added List for PDF text
+import fitz # PyMuPDF
 
 # --- Type Definition for Scraped Data ---
 class ScrapedData(TypedDict, total=False):
     """
-    A dictionary structure for storing data scraped from a web page.
+    A dictionary structure for storing data scraped from a web page or PDF.
     `total=False` means keys are optional and might not always be present.
     """
     url: str                     # The URL that was scraped
-    raw_html: Optional[str]      # Full raw HTML content (optional to store)
-    title: Optional[str]         # HTML <title> tag content
-    meta_description: Optional[str] # Content of <meta name="description">
-    og_title: Optional[str]      # OpenGraph title (og:title)
-    og_description: Optional[str]# OpenGraph description (og:description)
-    main_text: Optional[str]     # Main article text extracted by trafilatura
+    # raw_html: Optional[str]      # Full raw HTML content (optional to store from v1.1) - kept commented
+    scraped_title: Optional[str]         # HTML <title> tag content or PDF metadata title
+    meta_description: Optional[str] # Content of <meta name="description"> (N/A for PDF)
+    og_title: Optional[str]      # OpenGraph title (og:title) (N/A for PDF)
+    og_description: Optional[str]# OpenGraph description (og:description) (N/A for PDF)
+    main_text: Optional[str]     # Main article text extracted by trafilatura or PyMuPDF
     error: Optional[str]         # Error message if scraping failed for this URL
+    content_type: Optional[str]  # Detected content type (e.g., 'html', 'pdf')
 
-# --- Main Scraping Function ---
-def fetch_and_extract_content(url: str, timeout: int = 15) -> ScrapedData:
+DEFAULT_USER_AGENT: str = ( # Moved to global scope for consistency
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/91.0.4472.124 Safari/537.36" 
+)
+
+def _extract_text_from_pdf_bytes(pdf_bytes: bytes) -> tuple[Optional[str], Optional[str]]:
     """
-    Fetches content from the given URL and extracts metadata and main text.
+    Extracts text and title from PDF bytes using PyMuPDF (fitz).
 
     Args:
-        url: The URL of the web page to scrape.
+        pdf_bytes: The byte content of the PDF file.
+
+    Returns:
+        A tuple (full_text, document_title).
+        - full_text: Concatenated text from all pages.
+        - document_title: Title from PDF metadata, if available.
+        Returns (None, None) if a significant error occurs during PDF processing.
+    """
+    full_text_list: List[str] = []
+    document_title: Optional[str] = None
+    try:
+        with fitz.open(stream=pdf_bytes, filetype="pdf") as doc:
+            if doc.metadata:
+                document_title = doc.metadata.get('title')
+                if document_title and document_title.lower().endswith(".pdf"):
+                    document_title = document_title[:-4].strip()
+                if not document_title: 
+                    document_title = None
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                page_text = page.get_text("text")
+                if page_text:
+                    full_text_list.append(page_text.strip())
+        return "\n\n".join(full_text_list) if full_text_list else None, document_title
+    except Exception as e:
+        print(f"SCRAPER_PDF_ERROR: Error extracting text/title from PDF: {e}")
+        return None, None
+
+# --- Main Scraping Function ---
+def fetch_and_extract_content(url: str, timeout: int = 15) -> ScrapedData: # timeout from v1.1
+    """
+    Fetches content from the given URL and extracts metadata and main text.
+    Supports HTML and PDF documents.
+
+    Args:
+        url: The URL of the web page/document to scrape.
         timeout: The timeout in seconds for the HTTP GET request.
 
     Returns:
         A ScrapedData dictionary containing the extracted information.
         If an error occurs, the 'error' key in the dictionary will be populated.
     """
-    scraped_data: ScrapedData = {'url': url} # Initialize with the URL
+    scraped_data: ScrapedData = {
+        'url': url,
+        "scraped_title": None, # Changed from 'title' to 'scraped_title' for consistency
+        "meta_description": None,
+        "og_title": None,
+        "og_description": None,
+        "main_text": None,
+        "error": None,
+        "content_type": None
+    }
     
-    # Using a common browser user-agent can help avoid simple bot blocks.
-    user_agent = (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/91.0.4472.124 Safari/537.36" # A common Chrome user agent
-    )
-    headers = {'User-Agent': user_agent}
+    headers = {'User-Agent': DEFAULT_USER_AGENT} # Use global DEFAULT_USER_AGENT
 
     try:
         response = requests.get(url, headers=headers, timeout=timeout, allow_redirects=True)
-        response.raise_for_status() # Raises an HTTPError for bad responses (4XX or 5XX)
+        response.raise_for_status() 
 
-        # Optional: Store raw HTML if needed for deeper analysis or debugging later.
-        # scraped_data['raw_html'] = response.text
+        # Optional: Store raw HTML - from v1.1, kept commented
+        # scraped_data['raw_html'] = response.text 
 
-        # --- Metadata Extraction with BeautifulSoup ---
-        soup = BeautifulSoup(response.content, 'html.parser')
+        current_content_type: str = response.headers.get('Content-Type', '').lower()
+        scraped_data['content_type'] = current_content_type.split(';')[0] 
 
-        # Extract HTML Title
-        if soup.title and soup.title.string:
-            scraped_data['title'] = soup.title.string.strip()
-        else: # Fallback for title: try to get OG title if HTML title is missing/empty
-            og_title_tag_for_title_fallback = soup.find('meta', property='og:title')
-            if og_title_tag_for_title_fallback and og_title_tag_for_title_fallback.get('content'):
-                 scraped_data['title'] = og_title_tag_for_title_fallback.get('content').strip()
+        if 'application/pdf' in current_content_type:
+            scraped_data['content_type'] = 'pdf' 
+            pdf_bytes = response.content
+            extracted_text, pdf_doc_title = _extract_text_from_pdf_bytes(pdf_bytes)
+            
+            if extracted_text:
+                scraped_data['main_text'] = extracted_text
+            else:
+                scraped_data['main_text'] = "SCRAPER_INFO: Could not extract text content from PDF or PDF was empty."
 
-        # Extract Meta Description
-        desc_tag = soup.find('meta', attrs={'name': 'description'})
-        if desc_tag and desc_tag.get('content'):
-            scraped_data['meta_description'] = desc_tag.get('content').strip()
+            if pdf_doc_title:
+                scraped_data['scraped_title'] = pdf_doc_title
+            else: 
+                try:
+                    url_filename = url.split('/')[-1]
+                    if url_filename.lower().endswith(".pdf"): url_filename = url_filename[:-4]
+                    url_filename = url_filename.replace('-', ' ').replace('_', ' ').strip()
+                    scraped_data['scraped_title'] = url_filename if url_filename else "Untitled PDF Document"
+                except Exception:
+                    scraped_data['scraped_title'] = "Untitled PDF Document"
+            
+            scraped_data['meta_description'] = "N/A for PDF"
+            scraped_data['og_title'] = "N/A for PDF"
+            scraped_data['og_description'] = "N/A for PDF"
 
-        # Extract OpenGraph Title (often preferred for social sharing)
-        og_title_tag = soup.find('meta', property='og:title')
-        if og_title_tag and og_title_tag.get('content'):
-            scraped_data['og_title'] = og_title_tag.get('content').strip()
-        elif scraped_data.get('title'): # Fallback to HTML title if OG title not found
-            scraped_data['og_title'] = scraped_data['title']
+        elif 'text/html' in current_content_type or not current_content_type or 'text/plain' in current_content_type:
+            if not current_content_type: scraped_data['content_type'] = 'html (assumed)'
+            else: scraped_data['content_type'] = 'html'
 
-        # Extract OpenGraph Description
-        og_desc_tag = soup.find('meta', property='og:description')
-        if og_desc_tag and og_desc_tag.get('content'):
-            scraped_data['og_description'] = og_desc_tag.get('content').strip()
-        elif scraped_data.get('meta_description'): # Fallback to meta description if OG description not found
-            scraped_data['og_description'] = scraped_data['meta_description']
+            soup = BeautifulSoup(response.content, 'html.parser') # Use response.content for BS consistency
 
-        # --- Main Content Extraction with Trafilatura ---
-        # Check content type to ensure we're trying to parse HTML.
-        # Trafilatura works best on HTML content.
-        content_type = response.headers.get('Content-Type', '').lower()
-        if 'text/html' in content_type:
-            # `trafilatura.extract` attempts to get the main body of text.
-            # It's generally good but can struggle with complex JS-heavy sites or non-article layouts.
+            # Extract HTML Title
+            if soup.title and soup.title.string:
+                scraped_data['scraped_title'] = soup.title.string.strip()
+            else: 
+                og_title_tag_for_title_fallback = soup.find('meta', property='og:title')
+                if og_title_tag_for_title_fallback and og_title_tag_for_title_fallback.get('content'):
+                     scraped_data['scraped_title'] = og_title_tag_for_title_fallback.get('content').strip()
+
+            # Extract Meta Description
+            desc_tag = soup.find('meta', attrs={'name': 'description'})
+            if desc_tag and desc_tag.get('content'):
+                scraped_data['meta_description'] = desc_tag.get('content').strip()
+
+            # Extract OpenGraph Title
+            og_title_tag = soup.find('meta', property='og:title')
+            if og_title_tag and og_title_tag.get('content'):
+                scraped_data['og_title'] = og_title_tag.get('content').strip()
+            elif scraped_data.get('scraped_title'): 
+                scraped_data['og_title'] = scraped_data['scraped_title']
+
+            # Extract OpenGraph Description
+            og_desc_tag = soup.find('meta', property='og:description')
+            if og_desc_tag and og_desc_tag.get('content'):
+                scraped_data['og_description'] = og_desc_tag.get('content').strip()
+            elif scraped_data.get('meta_description'): 
+                scraped_data['og_description'] = scraped_data['meta_description']
+            
+            # Fallback for scraped_title (already done, but ensure it's set if only OG title was found initially)
+            if not scraped_data['scraped_title'] and scraped_data['og_title']:
+                 scraped_data['scraped_title'] = scraped_data['og_title']
+
+
+            # Main Content Extraction with Trafilatura (from v1.1 logic)
             main_text_extracted = trafilatura.extract(
-                response.text, # Use response.text (decoded string) for trafilatura
+                response.text, 
                 include_comments=False,
-                include_tables=False, # Set to True if table data is important
-                no_fallback=True    # If True, doesn't use BeautifulSoup as a basic fallback
-                                    # Set to False if you want it to try harder with a basic extractor.
+                include_tables=False, # As per v1.1
+                no_fallback=True    # As per v1.1
             )
             if main_text_extracted:
                 scraped_data['main_text'] = main_text_extracted.strip()
             else:
                 scraped_data['main_text'] = "Trafilatura could not extract main content from this HTML page."
-        else:
-            scraped_data['main_text'] = f"Content type '{content_type}' not processed for main text extraction."
+        
+        else: 
+            scraped_data['error'] = f"Unsupported content type for detailed scraping: {current_content_type.split(';')[0]}"
+            scraped_data['main_text'] = f"SCRAPER_INFO: Content type '{current_content_type.split(';')[0]}' not processed for main text."
+            try:
+                soup_fallback = BeautifulSoup(response.content, 'html.parser', from_encoding=response.encoding)
+                if soup_fallback.title and soup_fallback.title.string:
+                    scraped_data['scraped_title'] = soup_fallback.title.string.strip()
+                else:
+                    scraped_data['scraped_title'] = url.split('/')[-1] if '/' in url else url
+            except:
+                 scraped_data['scraped_title'] = url.split('/')[-1] if '/' in url else url
 
-    # --- Error Handling ---
     except requests.exceptions.Timeout:
         scraped_data['error'] = f"Request timed out after {timeout} seconds."
     except requests.exceptions.HTTPError as e:
         scraped_data['error'] = f"HTTP error: {e.response.status_code} {e.response.reason}."
     except requests.exceptions.RequestException as e:
-        # Catches other requests-related errors (e.g., DNS failure, connection error)
         scraped_data['error'] = f"Web request error: {e}."
     except Exception as e:
-        # Catch-all for any other unexpected errors during scraping or parsing
         scraped_data['error'] = f"An unexpected error occurred during scraping/parsing: {e}."
-        # In a production app, log the full traceback here for debugging.
-        # import traceback
-        # print(traceback.format_exc())
+
+    if scraped_data.get('main_text') is None and not scraped_data.get('error'):
+        scraped_data['main_text'] = "SCRAPER_INFO: No main text could be extracted."
+    if scraped_data.get('scraped_title') is None and not scraped_data.get('error'): # Ensure title key consistency
+        scraped_data['scraped_title'] = "Untitled Document"
 
     return scraped_data
 
 if __name__ == '__main__':
-    # This block is for direct testing of the scraper module.
-    # It requires Streamlit to be installed to use st.* functions.
-    # To run: streamlit run modules/scraper.py
-    import streamlit as st_test # Alias to avoid confusion with module-level st if any
+    import streamlit as st_test 
     st_test.set_page_config(layout="wide")
-    st_test.title("Scraper Module Test (v1.1)")
+    st_test.title("Scraper Module Test (v1.2.0 - PDF Support Added)") # Updated title
     
-    test_url_input = st_test.text_input("Enter URL to scrape:", "https://blog.streamlit.io/how-to-master-llm-hallucinations/")
+    test_url_input = st_test.text_input("Enter URL to scrape (HTML or PDF):", "https://arxiv.org/pdf/1706.03762") # Example PDF
 
     if st_test.button("Scrape URL"):
         if test_url_input:
@@ -147,11 +229,18 @@ if __name__ == '__main__':
                 st_test.error(f"Scraping Error: {data_output['error']}")
 
             st_test.subheader("Extracted Data (JSON):")
-            st_test.json(data_output) # Display all data as JSON for easy inspection
+            st_test.json(data_output) 
+
+            if data_output.get('scraped_title'): # Check for consistent title key
+                st_test.write(f"**Detected Title:** {data_output['scraped_title']}")
+            if data_output.get('content_type'):
+                st_test.write(f"**Detected Content Type:** {data_output['content_type']}")
+
 
             if data_output.get('main_text') and not data_output.get('error'):
-                st_test.subheader("Main Text Preview (first 500 chars):")
-                st_test.text_area("Main Text:", value=data_output['main_text'][:500]+"...", height=200, disabled=True)
+                st_test.subheader("Main Text Preview (first 1000 chars):")
+                st_test.text_area("Main Text:", value=data_output['main_text'][:1000]+"...", height=300, disabled=True)
         else:
             st_test.warning("Please enter a URL to test scraping.")
+
 # end of modules/scraper.py
