@@ -1,5 +1,5 @@
 # app.py
-# Version 2.0.1: FINAL fix for syntax error in progress text assignment.
+# Version 2.0.2: Custom green button CSS for Start button when GSheets connected.
 # Includes all UI refinements from v2.0.0.
 
 """
@@ -60,25 +60,79 @@ if not st.session_state.sheet_connection_attempted_this_session:
 # --- UI Layout Definition ---
 st.title("Keyword Search & Analysis Tool (KSAT) 🔮") 
 st.markdown("Enter keywords, configure options, and let the tool gather insights for you.")
+
+# --- Custom CSS for Green Button ---
+# This CSS targets the primary button IF a specific class is added or a parent container.
+# For simplicity, we make the Streamlit primary button green if it's not disabled.
+# More specific targeting might be needed if other primary buttons exist.
+green_button_css = """
+<style>
+/* Targets a primary button that is NOT disabled */
+div[data-testid="stButton"] > button:not(:disabled)[kind="primary"] {
+    background-color: #4CAF50; /* Green */
+    color: white;
+    border: 1px solid #4CAF50; /* Optional: adds a border */
+}
+div[data-testid="stButton"] > button:not(:disabled)[kind="primary"]:hover {
+    background-color: #45a049; /* Darker green on hover */
+    color: white;
+    border: 1px solid #45a049; /* Optional */
+}
+div[data-testid="stButton"] > button:not(:disabled)[kind="primary"]:active {
+    background-color: #3e8e41; /* Even darker green on click */
+    color: white;
+    border: 1px solid #3e8e41; /* Optional */
+}
+
+/* Styling for a disabled button that should look grey */
+div[data-testid="stButton"] > button:disabled[kind="secondary"] {
+    background-color: #e0e0e0; /* Light grey */
+    color: #a0a0a0; /* Dim text color */
+    border: 1px solid #c0c0c0;
+}
+</style>
+"""
+st.markdown(green_button_css, unsafe_allow_html=True)
+
+
 with st.sidebar:
     st.subheader("Search Parameters")
     keywords_input_val: str = st.text_input("Keywords (comma-separated):", value=st.session_state.last_keywords, key="keywords_text_input_main", help="Enter comma-separated keywords. Press Enter to apply.")
     num_results_wanted_per_keyword: int = st.slider("Number of successfully scraped results per keyword:", 1, 10, cfg.num_results_per_keyword_default, key="num_results_slider")
-    st.subheader(f"LLM Processing - Provider: {cfg.llm.provider.upper()}") # Simplified "Optional"
+    st.subheader(f"LLM Processing - Provider: {cfg.llm.provider.upper()}")
     llm_key_available: bool = (cfg.llm.provider == "google" and cfg.llm.google_gemini_api_key) or (cfg.llm.provider == "openai" and cfg.llm.openai_api_key)
     if llm_key_available: model_display_name: str = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize; st.caption(f"Using Model: {model_display_name}")
     else: st.caption(f"API Key for {cfg.llm.provider.upper()} not configured. LLM features disabled.")
     llm_extract_query_input_val: str = st.text_input("Specific info to extract with LLM (guides focused summary):", value=st.session_state.last_extract_query, placeholder="e.g., Key products, contact emails", key="llm_extract_text_input", help="Comma-separated. Press Enter to apply.") 
     st.markdown("---") 
-    button_type = "secondary"; button_disabled = True; button_help_text = st.session_state.gsheets_error_message or "Google Sheets connection status undetermined." 
+    
+    button_streamlit_type = "secondary" # What Streamlit type to use (primary for CSS targeting, secondary for default grey)
+    button_disabled = True
+    button_help_text = st.session_state.gsheets_error_message or "Google Sheets connection status undetermined." 
+
     if st.session_state.sheet_writing_enabled:
-        button_type = "primary"; button_disabled = False; button_help_text = "GSheets connected. Click to start."
-    elif st.session_state.gsheets_error_message: st.error(st.session_state.gsheets_error_message) 
-    start_button_val: bool = st.button("🚀 Start Search & Analysis", type=button_type, use_container_width=True, disabled=button_disabled, help=button_help_text)
+        button_streamlit_type = "primary" # Target this with CSS for green
+        button_disabled = False
+        button_help_text = "Google Sheets connected. Click to start processing."
+        # No st.success here, color of button indicates success.
+    elif st.session_state.gsheets_error_message: 
+        st.error(st.session_state.gsheets_error_message) 
+        # Button remains secondary (grey) and disabled
+    
+    start_button_val: bool = st.button(
+        "🚀 Start Search & Analysis", 
+        type=button_streamlit_type, 
+        use_container_width=True, 
+        disabled=button_disabled,
+        help=button_help_text
+    )
+
     st.markdown("---") 
     st.caption("✨ LLM-generated search queries will be automatically used (if LLM is available).")
     st.caption("📄 LLM Summaries for items will be automatically generated (if LLM is available).")
 
+# (Rest of the file from results_container onwards is the same as v2.0.1)
+# ...
 results_container = st.container()
 log_container = st.container()
 
@@ -127,7 +181,6 @@ if start_button_val:
     if enable_llm_query_generation_val_runtime and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0 :
         current_major_step_count +=1
         with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text="LLM Query Generation Complete...")
-    
     for keyword_val in keywords_list_val_runtime:
         st.session_state.processing_log.append(f"\n🔎 Processing keyword: {keyword_val}")
         with progress_bar_placeholder.container(): 
@@ -143,11 +196,8 @@ if start_button_val:
             if successfully_scraped_for_this_keyword >= num_results_wanted_per_keyword: st.session_state.processing_log.append(f"  Reached target of {num_results_wanted_per_keyword} for '{keyword_val}'. Skipping {len(search_results_items_val) - search_item_idx} Google result(s)."); current_major_step_count += (len(search_results_items_val) - search_item_idx) ; break 
             current_major_step_count += 1 ; url_to_scrape_val: Optional[str] = search_item_val.get('link')
             if not url_to_scrape_val: st.session_state.processing_log.append(f"  - Item {search_item_idx+1} for '{keyword_val}' has no URL. Skipping."); continue
-            
             progress_text_scrape = f"Scraping ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:50]}..."
-            with progress_bar_placeholder.container(): 
-                st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_scrape)
-            
+            with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_scrape)
             st.session_state.processing_log.append(f"  ➔ Attempting to scrape ({search_item_idx+1}/{len(search_results_items_val)}): {url_to_scrape_val}")
             scraped_content_val: scraper.ScrapedData = scraper.fetch_and_extract_content(url_to_scrape_val) 
             item_data_val: Dict[str, Any] = {"keyword_searched": keyword_val, "url": url_to_scrape_val, "search_title": search_item_val.get('title'), "search_snippet": search_item_val.get('snippet'), "scraped_title": scraped_content_val.get('scraped_title'), "meta_description": scraped_content_val.get('meta_description'), "og_title": scraped_content_val.get('og_title'), "og_description": scraped_content_val.get('og_description'), "scraped_main_text": scraped_content_val.get('main_text'), "scraping_error": scraped_content_val.get('error'), "content_type": scraped_content_val.get('content_type'), "llm_summary": None, "llm_extracted_info": None, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S") }
@@ -159,16 +209,10 @@ if start_button_val:
                     if llm_key_available:
                         llm_api_key_to_use: Optional[str] = cfg.llm.google_gemini_api_key if cfg.llm.provider == "google" else cfg.llm.openai_api_key; llm_model_to_use: str = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize
                         if enable_llm_summary_val_runtime: 
-                            current_major_step_count +=1
-                            progress_text_llm = f"LLM Summary ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..." # CORRECTED LINE
-                            with progress_bar_placeholder.container(): # CORRECTED LINE - with on new line
-                                st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_llm)
+                            current_major_step_count +=1 ; progress_text_llm = f"LLM Summary ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..."; with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_llm)
                             st.session_state.processing_log.append(f"       Generating LLM summary..."); summary: Optional[str] = llm_processor.generate_summary(main_text_for_llm, api_key=llm_api_key_to_use, model_name=llm_model_to_use, max_input_chars=cfg.llm.max_input_chars); item_data_val["llm_summary"] = summary; st.session_state.processing_log.append(f"        Summary: {str(summary)[:100] if summary else 'Failed/Empty'}..."); time.sleep(0.1) 
                         if llm_extract_query_input_val.strip():
-                            current_major_step_count +=1
-                            progress_text_llm = f"LLM Extract ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..." # CORRECTED LINE
-                            with progress_bar_placeholder.container(): # CORRECTED LINE - with on new line
-                                st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_llm)
+                            current_major_step_count +=1 ; progress_text_llm = f"LLM Extract ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..."; with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_llm)
                             st.session_state.processing_log.append(f"      Extracting info: '{llm_extract_query_input_val}'..."); extracted_info: Optional[str] = llm_processor.extract_specific_information(main_text_for_llm, extraction_query=llm_extract_query_input_val, api_key=llm_api_key_to_use, model_name=llm_model_to_use, max_input_chars=cfg.llm.max_input_chars); item_data_val["llm_extracted_info"] = extracted_info; st.session_state.processing_log.append(f"        Extracted: {str(extracted_info)[:100] if extracted_info else 'Failed/Empty'}..."); time.sleep(0.1) 
                     st.session_state.results_data.append(item_data_val) 
                 else: st.session_state.processing_log.append(f"    ⚠️ Scraped, but main text insufficient (len={len(current_main_text.strip())}, type: {item_data_val.get('content_type')}). LLM processing skipped.")
