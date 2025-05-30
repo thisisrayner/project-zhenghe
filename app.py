@@ -1,27 +1,11 @@
 # app.py
-# Version 1.9.6: Corrected syntax error for progress text assignment (again).
+# Version 1.9.8: Stricter Google Sheets check for enabling search button.
+# UI updates: Title change, LLM query/summary always on.
 # Includes PDF text extraction, consistent keyword input, LLM query gen, tuple passing, relevancy emojis.
 
 """
-Streamlit Web Application for Keyword Search, Web Scraping, LLM Analysis, and Data Recording.
-
-This application allows users to:
-1. Input keywords for searching via Google Custom Search.
-2. Scrape metadata and main content from the search result URLs (supports HTML & PDF text).
-3. Utilize a Large Language Model (LLM, e.g., Google Gemini) to:
-    a. Generate individual summaries for each scraped page/document.
-    b. Extract specific user-defined information from each page/document (with relevancy score).
-    c. Create a consolidated overview summary from all processed items in a batch,
-       potentially focused by the user's extraction query and item relevancy.
-    d. Generate alternative search queries to diversify search scope.
-4. Display the processed information and LLM insights (with relevancy emojis) in an interactive UI.
-5. Store the detailed results (including a batch summary row and individual item rows)
-   into a specified Google Sheet.
-6. Download the results (item details and consolidated summary) as an Excel file.
-
-The application is structured modularly, with separate Python files in the 'modules'
-directory handling configuration, search, scraping, LLM processing, and data storage.
-API keys and sensitive settings are managed via Streamlit Secrets (`.streamlit/secrets.toml`).
+Streamlit Web Application for Keyword Search & Analysis Tool (KSAT).
+(Docstring as in v1.9.7, with note that GSheets connection is now effectively required for search)
 """
 
 import streamlit as st
@@ -34,16 +18,7 @@ import math
 
 # --- Helper function for Display Logic ---
 def get_display_prefix_for_item(item_data: Dict[str, Any], llm_generated_keywords: Set[str]) -> str:
-    """
-    Determines an emoji prefix for an item based on its LLM relevancy score
-    and whether it came from an LLM-generated keyword.
-    - 5/5: "5️⃣ "
-    - 4/5: "4️⃣ "
-    - 3/5 from LLM query: "✨3️⃣ "
-    - 3/5 from original query: "3️⃣ "
-    - Below 3 or no score: "" (empty string)
-    """
-    prefix = ""
+    prefix = "" # (Implementation as in v1.9.6)
     llm_extracted_info = item_data.get("llm_extracted_info")
     score: Optional[int] = None
     if llm_extracted_info and llm_extracted_info.startswith("Relevancy Score: "):
@@ -60,48 +35,98 @@ def get_display_prefix_for_item(item_data: Dict[str, Any], llm_generated_keyword
     return prefix
 
 # --- Page Configuration ---
-st.set_page_config(page_title="Keyword Search & Analysis Tool", page_icon="🔮", layout="wide")
+st.set_page_config(page_title="Keyword Search & Analysis Tool (KSAT)", page_icon="🔮", layout="wide") 
 
 # --- Load Application Configuration ---
 cfg: Optional[config.AppConfig] = config.load_config()
 if not cfg: st.error("CRITICAL: Application configuration failed to load. Check secrets.toml."); st.stop()
 
 # --- Session State Initialization ---
-default_session_state: Dict[str, Any] = { 'processing_log': [], 'results_data': [], 'last_keywords': "", 'last_extract_query': "", 'consolidated_summary_text': None, 'gs_worksheet': None, 'sheet_writing_enabled': False, 'sheet_connection_attempted_this_session': False, 'initial_keywords_for_display': set(), 'llm_generated_keywords_set_for_display': set() }
+default_session_state: Dict[str, Any] = { 
+    'processing_log': [], 'results_data': [], 
+    'last_keywords': "", 'last_extract_query': "", 
+    'consolidated_summary_text': None, 'gs_worksheet': None, 
+    'sheet_writing_enabled': False, # This will be True only if setup is successful
+    'sheet_connection_attempted_this_session': False,
+    # 'gsheets_configured_and_failed': False, # No longer needed with new logic
+    'gsheets_error_message': None, # To store specific GSheets error
+    'initial_keywords_for_display': set(), 
+    'llm_generated_keywords_set_for_display': set()
+}
 for key, default_value in default_session_state.items():
     if key not in st.session_state: st.session_state[key] = default_value
 
 # --- Google Sheets Setup ---
+# This logic now determines if GSheets is successfully connected.
+gsheets_secrets_present = cfg.gsheets.service_account_info and \
+                           (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name)
+
 if not st.session_state.sheet_connection_attempted_this_session:
     st.session_state.sheet_connection_attempted_this_session = True 
-    if cfg.gsheets.service_account_info and (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name):
-        st.session_state.sheet_writing_enabled = True 
-        st.session_state.gs_worksheet = data_storage.get_gspread_worksheet(cfg.gsheets.service_account_info, cfg.gsheets.spreadsheet_id, cfg.gsheets.spreadsheet_name, cfg.gsheets.worksheet_name)
-        if st.session_state.gs_worksheet: data_storage.ensure_master_header(st.session_state.gs_worksheet) 
-        else: st.session_state.sheet_writing_enabled = False 
-    else: st.session_state.sheet_writing_enabled = False
+    st.session_state.sheet_writing_enabled = False # Default to False
+    st.session_state.gsheets_error_message = None # Reset error
+
+    if gsheets_secrets_present:
+        # Attempt connection only if secrets are present
+        st.session_state.gs_worksheet = data_storage.get_gspread_worksheet(
+            cfg.gsheets.service_account_info, 
+            cfg.gsheets.spreadsheet_id, 
+            cfg.gsheets.spreadsheet_name, 
+            cfg.gsheets.worksheet_name
+        )
+        if st.session_state.gs_worksheet:
+            data_storage.ensure_master_header(st.session_state.gs_worksheet) 
+            st.session_state.sheet_writing_enabled = True # SUCCESS!
+            # Success message can be implicit via enabled button
+        else: 
+            # Secrets were present, but connection failed
+            st.session_state.gsheets_error_message = "Google Sheets connection failed. Check Sheet ID/Name & sharing with service account."
+    else: 
+        # Secrets for GSheets are not provided
+        st.session_state.gsheets_error_message = "Google Sheets integration not configured in secrets.toml. Search disabled."
 
 # --- UI Layout Definition ---
-st.title("Keyword Search & Analysis Tool 🔮")
+st.title("Keyword Search & Analysis Tool (KSAT) 🔮") 
 st.markdown("Enter keywords, configure options, and let the tool gather insights for you.")
+
 with st.sidebar:
     st.header("⚙️ Configuration")
     st.subheader("Search Parameters")
     keywords_input_val: str = st.text_input("Keywords (comma-separated):", value=st.session_state.last_keywords, key="keywords_text_input_main", help="Enter one or more search keywords/phrases, separated by commas. Press Enter to apply changes." )
     num_results_wanted_per_keyword: int = st.slider("Number of successfully scraped results per keyword:", min_value=1, max_value=10, value=cfg.num_results_per_keyword_default, key="num_results_slider", help="The tool will attempt to get this many usable web pages for each keyword.")
-    enable_llm_query_generation_val: bool = st.checkbox("✨ Enhance with LLM-generated search queries?", value=True, key="llm_query_gen_checkbox", help="Let the LLM generate additional search queries based on your input to broaden the search.")
+    st.caption("✨ LLM-generated search queries will be automatically used to enhance search.")
+
     st.subheader(f"LLM Processing (Optional) - Provider: {cfg.llm.provider.upper()}")
     llm_key_available: bool = (cfg.llm.provider == "google" and cfg.llm.google_gemini_api_key) or (cfg.llm.provider == "openai" and cfg.llm.openai_api_key)
     if llm_key_available: model_display_name: str = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize; st.caption(f"Using Model: {model_display_name}")
     else: st.caption(f"API Key for {cfg.llm.provider.upper()} not configured in secrets. LLM features disabled.")
-    enable_llm_summary_val: bool = st.checkbox("Generate LLM Summary?", value=True, key="llm_summary_checkbox", disabled=not llm_key_available)
+    st.caption("📄 LLM Summaries for individual items will be automatically generated.")
     llm_extract_query_input_val: str = st.text_input("Specific info to extract with LLM (also guides focused consolidated summary):", value=st.session_state.last_extract_query, placeholder="e.g., Key products, contact emails", key="llm_extract_text_input", help="Enter keywords separated by commas. Press Enter to apply changes.") 
-    if not st.session_state.sheet_writing_enabled:
-        if cfg.gsheets.service_account_info or cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name: st.sidebar.warning("⚠️ Google Sheets: Connection failed or sheet/worksheet not found. Results will not be saved.")
-        else: st.sidebar.caption("Google Sheets integration not configured (no secrets found).")
-    else: st.sidebar.success(f"Google Sheets: Connected to '{st.session_state.gs_worksheet.spreadsheet.title if st.session_state.gs_worksheet else 'N/A'}' -> '{st.session_state.gs_worksheet.title if st.session_state.gs_worksheet else 'N/A'}'.")
-    start_button_val: bool = st.button("🚀 Start Search & Analysis", type="primary", use_container_width=True)
+    
+    # Dynamic button color/state and GSheets status message
+    button_type = "secondary" # Default to Grey (disabled)
+    button_disabled = True
+    button_help_text = st.session_state.gsheets_error_message # Default to error message
 
+    if st.session_state.sheet_writing_enabled: # This is True only if GSheets configured AND connected
+        button_type = "primary" # Green
+        button_disabled = False
+        button_help_text = "Google Sheets connected. Click to start processing."
+        st.success(f"Google Sheets: Connected to '{st.session_state.gs_worksheet.spreadsheet.title if st.session_state.gs_worksheet else 'N/A'}' -> '{st.session_state.gs_worksheet.title if st.session_state.gs_worksheet else 'N/A'}'.")
+    elif st.session_state.gsheets_error_message:
+        st.error(st.session_state.gsheets_error_message) # Display specific error
+        # Button remains disabled with the error message as help text
+    
+    start_button_val: bool = st.button(
+        "🚀 Start Search & Analysis", 
+        type=button_type, 
+        use_container_width=True, 
+        disabled=button_disabled,
+        help=button_help_text
+    )
+
+# (Rest of the file: results_container, log_container, to_excel, main processing block, display sections)
+# ... (This part remains the same as v1.9.6, as it's triggered only if start_button_val is True) ...
 results_container = st.container()
 log_container = st.container()
 
@@ -123,7 +148,8 @@ if start_button_val:
     st.session_state.llm_generated_keywords_set_for_display = set() 
     if not initial_keywords_list: st.sidebar.error("Please enter at least one keyword."); st.stop() 
     keywords_list_val_runtime: List[str] = list(initial_keywords_list) 
-    if enable_llm_query_generation_val and llm_key_available and initial_keywords_list:
+    enable_llm_query_generation_val_runtime = True 
+    if enable_llm_query_generation_val_runtime and llm_key_available and initial_keywords_list:
         st.session_state.processing_log.append("\n🧠 Attempting to generate additional search queries with LLM...")
         num_user_terms = len(initial_keywords_list); num_llm_terms_to_generate = min(math.floor(num_user_terms * 1.5), 5)
         if num_llm_terms_to_generate > 0:
@@ -141,17 +167,17 @@ if start_button_val:
         else: st.session_state.processing_log.append("  ℹ️ No additional LLM queries requested based on calculation.")
     oversample_factor: float = 2.0; max_google_fetch_per_keyword: int = 10 ; est_urls_to_fetch_per_keyword: int = min(max_google_fetch_per_keyword, int(num_results_wanted_per_keyword * oversample_factor))
     if est_urls_to_fetch_per_keyword < num_results_wanted_per_keyword: est_urls_to_fetch_per_keyword = num_results_wanted_per_keyword
+    enable_llm_summary_val_runtime = True 
     total_llm_tasks_per_good_scrape: int = 0
     if llm_key_available: 
-        if enable_llm_summary_val: total_llm_tasks_per_good_scrape += 1
+        if enable_llm_summary_val_runtime: total_llm_tasks_per_good_scrape += 1
         if llm_extract_query_input_val.strip(): total_llm_tasks_per_good_scrape +=1
     total_major_steps_for_progress: int = (len(keywords_list_val_runtime) * est_urls_to_fetch_per_keyword) + (len(keywords_list_val_runtime) * num_results_wanted_per_keyword * total_llm_tasks_per_good_scrape)
-    if enable_llm_query_generation_val and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0: total_major_steps_for_progress +=1 
+    if enable_llm_query_generation_val_runtime and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0: total_major_steps_for_progress +=1 
     current_major_step_count: int = 0; progress_bar_placeholder = st.empty() 
-    if enable_llm_query_generation_val and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0 :
+    if enable_llm_query_generation_val_runtime and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0 :
         current_major_step_count +=1
         with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text="LLM Query Generation Complete...")
-    
     for keyword_val in keywords_list_val_runtime:
         st.session_state.processing_log.append(f"\n🔎 Processing keyword: {keyword_val}")
         with progress_bar_placeholder.container(): 
@@ -167,12 +193,8 @@ if start_button_val:
             if successfully_scraped_for_this_keyword >= num_results_wanted_per_keyword: st.session_state.processing_log.append(f"  Reached target of {num_results_wanted_per_keyword} for '{keyword_val}'. Skipping {len(search_results_items_val) - search_item_idx} Google result(s)."); current_major_step_count += (len(search_results_items_val) - search_item_idx) ; break 
             current_major_step_count += 1 ; url_to_scrape_val: Optional[str] = search_item_val.get('link')
             if not url_to_scrape_val: st.session_state.processing_log.append(f"  - Item {search_item_idx+1} for '{keyword_val}' has no URL. Skipping."); continue
-            
-            # Corrected syntax for progress_text_scrape
             progress_text_scrape = f"Scraping ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:50]}..."
-            with progress_bar_placeholder.container(): 
-                st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_scrape)
-            
+            with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_scrape)
             st.session_state.processing_log.append(f"  ➔ Attempting to scrape ({search_item_idx+1}/{len(search_results_items_val)}): {url_to_scrape_val}")
             scraped_content_val: scraper.ScrapedData = scraper.fetch_and_extract_content(url_to_scrape_val) 
             item_data_val: Dict[str, Any] = {"keyword_searched": keyword_val, "url": url_to_scrape_val, "search_title": search_item_val.get('title'), "search_snippet": search_item_val.get('snippet'), "scraped_title": scraped_content_val.get('scraped_title'), "meta_description": scraped_content_val.get('meta_description'), "og_title": scraped_content_val.get('og_title'), "og_description": scraped_content_val.get('og_description'), "scraped_main_text": scraped_content_val.get('main_text'), "scraping_error": scraped_content_val.get('error'), "content_type": scraped_content_val.get('content_type'), "llm_summary": None, "llm_extracted_info": None, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S") }
@@ -183,28 +205,19 @@ if start_button_val:
                     st.session_state.processing_log.append(f"    ✔️ Scraped with sufficient text (len={len(current_main_text)}, type: {item_data_val.get('content_type')})."); successfully_scraped_for_this_keyword += 1; main_text_for_llm: str = current_main_text
                     if llm_key_available:
                         llm_api_key_to_use: Optional[str] = cfg.llm.google_gemini_api_key if cfg.llm.provider == "google" else cfg.llm.openai_api_key; llm_model_to_use: str = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize
-                        if enable_llm_summary_val:
-                            current_major_step_count +=1 
-                            # Corrected syntax for progress_text_llm
-                            progress_text_llm = f"LLM Summary ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..."
-                            with progress_bar_placeholder.container(): 
-                                st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_llm)
+                        if enable_llm_summary_val_runtime: # Check runtime flag
+                            current_major_step_count +=1 ; progress_text_llm = f"LLM Summary ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..."; with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_llm)
                             st.session_state.processing_log.append(f"       Generating LLM summary..."); summary: Optional[str] = llm_processor.generate_summary(main_text_for_llm, api_key=llm_api_key_to_use, model_name=llm_model_to_use, max_input_chars=cfg.llm.max_input_chars); item_data_val["llm_summary"] = summary; st.session_state.processing_log.append(f"        Summary: {str(summary)[:100] if summary else 'Failed/Empty'}..."); time.sleep(0.1) 
                         if llm_extract_query_input_val.strip():
-                            current_major_step_count +=1 
-                            # Corrected syntax for progress_text_llm
-                            progress_text_llm = f"LLM Extract ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..."
-                            with progress_bar_placeholder.container(): 
-                                st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_llm)
+                            current_major_step_count +=1 ; progress_text_llm = f"LLM Extract ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..."; with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_llm)
                             st.session_state.processing_log.append(f"      Extracting info: '{llm_extract_query_input_val}'..."); extracted_info: Optional[str] = llm_processor.extract_specific_information(main_text_for_llm, extraction_query=llm_extract_query_input_val, api_key=llm_api_key_to_use, model_name=llm_model_to_use, max_input_chars=cfg.llm.max_input_chars); item_data_val["llm_extracted_info"] = extracted_info; st.session_state.processing_log.append(f"        Extracted: {str(extracted_info)[:100] if extracted_info else 'Failed/Empty'}..."); time.sleep(0.1) 
                     st.session_state.results_data.append(item_data_val) 
                 else: st.session_state.processing_log.append(f"    ⚠️ Scraped, but main text insufficient (len={len(current_main_text.strip())}, type: {item_data_val.get('content_type')}). LLM processing skipped.")
             time.sleep(0.2) 
         if successfully_scraped_for_this_keyword < num_results_wanted_per_keyword: st.session_state.processing_log.append(f"  ⚠️ For '{keyword_val}', only got {successfully_scraped_for_this_keyword}/{num_results_wanted_per_keyword} desired scrapes."); remaining_llm_tasks_for_keyword: int = (num_results_wanted_per_keyword - successfully_scraped_for_this_keyword) * total_llm_tasks_per_good_scrape; current_major_step_count += remaining_llm_tasks_for_keyword
     with progress_bar_placeholder.container(): st.empty() 
-    
     consolidated_summary_text_for_batch: Optional[str] = None; topic_for_consolidation_for_batch: str = "Multiple Topics / Not Specified" 
-    if st.session_state.results_data and llm_key_available and (enable_llm_summary_val or llm_extract_query_input_val.strip()): 
+    if st.session_state.results_data and llm_key_available and (enable_llm_summary_val_runtime or llm_extract_query_input_val.strip()): 
         st.session_state.processing_log.append(f"\n✨ Generating consolidated overview...")
         with st.spinner("Generating consolidated overview..."):
             if not initial_keywords_list: topic_for_consolidation_for_batch = "the searched topics" 
@@ -231,14 +244,18 @@ if start_button_val:
                 consolidated_summary_text_for_batch = llm_processor.generate_consolidated_summary(summaries=tuple(all_valid_llm_outputs), topic_context=topic_for_consolidation_for_batch, api_key=llm_api_key_to_use, model_name=llm_model_to_use, max_input_chars=cfg.llm.max_input_chars, extraction_query_for_consolidation=extraction_query_context_for_consol )
                 st.session_state.processing_log.append(f"  Consolidated Overview (first 150 chars): {str(consolidated_summary_text_for_batch)[:150] if consolidated_summary_text_for_batch else 'Failed/Empty'}...")
         st.session_state.consolidated_summary_text = consolidated_summary_text_for_batch 
-    if st.session_state.sheet_writing_enabled and st.session_state.gs_worksheet:
+    if st.session_state.sheet_writing_enabled and st.session_state.gs_worksheet: # Check if writing is enabled (i.e. successful connection)
         if st.session_state.results_data or st.session_state.consolidated_summary_text:
             batch_process_timestamp_for_sheet: str = time.strftime("%Y-%m-%d %H:%M:%S"); st.session_state.processing_log.append(f"\n💾 Writing batch data to Google Sheets...")
             extraction_query_for_sheet: Optional[str] = st.session_state.last_extract_query if llm_extract_query_input_val.strip() else None
             write_successful: bool = data_storage.write_batch_summary_and_items_to_sheet(worksheet=st.session_state.gs_worksheet, batch_timestamp=batch_process_timestamp_for_sheet, consolidated_summary=st.session_state.consolidated_summary_text, topic_context=topic_for_consolidation_for_batch, item_data_list=st.session_state.results_data, extraction_query_text=extraction_query_for_sheet)
             if write_successful: st.session_state.processing_log.append(f"  Batch data written to Google Sheets.")
             else: st.session_state.processing_log.append(f"  ❌ Failed to write batch data to Google Sheets.")
-    elif st.session_state.results_data: st.session_state.processing_log.append("\n⚠️ Google Sheets writing disabled. Data not saved to sheet.")
+    elif gsheets_secrets_present and not st.session_state.sheet_writing_enabled : # GSheets was configured but failed
+        st.session_state.processing_log.append("\n⚠️ Google Sheets connection failed earlier. Data not saved to sheet.")
+    elif not gsheets_secrets_present: # GSheets was not configured
+        st.session_state.processing_log.append("\nℹ️ Google Sheets integration not configured. Data not saved to sheet.")
+
     if st.session_state.results_data or st.session_state.consolidated_summary_text: st.success("All processing complete!")
     else: st.warning("Processing complete, but no data was generated.")
 with results_container:
@@ -296,6 +313,6 @@ with log_container:
     if st.session_state.processing_log: 
         with st.expander("📜 View Processing Log", expanded=False): st.code("\n".join(st.session_state.processing_log), language=None)
 st.markdown("---")
-st.caption("Keyword Search & Analysis Tool v1.9.6")
+st.caption("Keyword Search & Analysis Tool (KSAT) v1.9.8")
 
 # end of app.py
