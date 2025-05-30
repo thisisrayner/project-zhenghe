@@ -12,3 +12,4 @@ google-generativeai # Added for Gemini
 python-dotenv
 pandas
 openpyxl
+PyMuPDF
