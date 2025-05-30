@@ -32,7 +32,10 @@ Docstring: Loads application configurations from Streamlit secrets.
 Module Docstring: Web scraping module for fetching and extracting content from URLs.
 
 ### class ScrapedData(TypedDict)
-Docstring: A dictionary structure for storing data scraped from a web page.
+Docstring: A dictionary structure for storing data scraped from a web page or PDF.
+
+### def _extract_text_from_pdf_bytes(pdf_bytes: bytes) -> tuple[Optional[str], Optional[str]]
+Docstring: Extracts text and title from PDF bytes using PyMuPDF (fitz).
 
 ### def fetch_and_extract_content(url: str, timeout: int = 15) -> ScrapedData
 Docstring: Fetches content from the given URL and extracts metadata and main text.
