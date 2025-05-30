@@ -1,5 +1,5 @@
 # app.py
-# Version 1.9.1: Corrected syntax error in LLM progress text assignment.
+# Version 1.9.2: Corrected syntax error in individual results display loop.
 # Integrates with data_storage v1.5 for unified header and batch writing.
 
 """
@@ -73,78 +73,46 @@ def to_excel(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd
     return output.getvalue()
 
 if start_button_val:
+    # (Initialization & LLM Query Generation - same as v1.9.1)
+    # ...
     st.session_state.processing_log = ["Processing started..."]
     st.session_state.results_data = [] 
     st.session_state.consolidated_summary_text = None 
     st.session_state.last_keywords = keywords_input_val 
     st.session_state.last_extract_query = llm_extract_query_input_val
-    
-    initial_keywords_list: List[str] = [
-        k.strip() for k in keywords_input_val.replace(',', '\n').split('\n') if k.strip()
-    ]
-
-    if not initial_keywords_list:
-        st.sidebar.error("Please enter at least one keyword.")
-        st.stop() 
-
+    initial_keywords_list: List[str] = [ k.strip() for k in keywords_input_val.replace(',', '\n').split('\n') if k.strip() ]
+    if not initial_keywords_list: st.sidebar.error("Please enter at least one keyword."); st.stop() 
     keywords_list_val_runtime: List[str] = list(initial_keywords_list) 
-
     if enable_llm_query_generation_val and llm_key_available and initial_keywords_list:
         st.session_state.processing_log.append("\n🧠 Attempting to generate additional search queries with LLM...")
-        num_user_terms = len(initial_keywords_list)
-        num_llm_terms_to_generate = min(math.floor(num_user_terms * 1.5), 5)
-
+        num_user_terms = len(initial_keywords_list); num_llm_terms_to_generate = min(math.floor(num_user_terms * 1.5), 5)
         if num_llm_terms_to_generate > 0:
-            llm_api_key_to_use: Optional[str] = cfg.llm.google_gemini_api_key if cfg.llm.provider == "google" else cfg.llm.openai_api_key
-            llm_model_for_query_gen: str = cfg.llm.google_gemini_model 
-            
+            llm_api_key_to_use: Optional[str] = cfg.llm.google_gemini_api_key if cfg.llm.provider == "google" else cfg.llm.openai_api_key; llm_model_for_query_gen: str = cfg.llm.google_gemini_model 
             with st.spinner(f"LLM generating {num_llm_terms_to_generate} additional search queries..."):
-                generated_queries: Optional[List[str]] = llm_processor.generate_search_queries(
-                    original_keywords=initial_keywords_list,
-                    specific_info_query=llm_extract_query_input_val if llm_extract_query_input_val.strip() else None,
-                    num_queries_to_generate=num_llm_terms_to_generate,
-                    api_key=llm_api_key_to_use,
-                    model_name=llm_model_for_query_gen 
-                )
-            
+                generated_queries: Optional[List[str]] = llm_processor.generate_search_queries(original_keywords=initial_keywords_list, specific_info_query=llm_extract_query_input_val if llm_extract_query_input_val.strip() else None, num_queries_to_generate=num_llm_terms_to_generate, api_key=llm_api_key_to_use, model_name=llm_model_for_query_gen )
             if generated_queries:
                 st.session_state.processing_log.append(f"  ✨ LLM generated {len(generated_queries)} new queries: {', '.join(generated_queries)}")
                 existing_keywords_set = set(k.lower() for k in keywords_list_val_runtime)
                 for gq in generated_queries:
-                    if gq.lower() not in existing_keywords_set:
-                        keywords_list_val_runtime.append(gq)
-                        existing_keywords_set.add(gq.lower())
+                    if gq.lower() not in existing_keywords_set: keywords_list_val_runtime.append(gq); existing_keywords_set.add(gq.lower())
                 st.session_state.processing_log.append(f"  🔍 Total unique keywords to search: {len(keywords_list_val_runtime)}")
-            else:
-                st.session_state.processing_log.append("  ⚠️ LLM did not generate new search queries or an error occurred. Proceeding with original keywords.")
-        else:
-            st.session_state.processing_log.append("  ℹ️ No additional LLM queries requested based on calculation.")
-    
-    oversample_factor: float = 2.0
-    max_google_fetch_per_keyword: int = 10 
-    est_urls_to_fetch_per_keyword: int = min(max_google_fetch_per_keyword, int(num_results_wanted_per_keyword * oversample_factor))
+            else: st.session_state.processing_log.append("  ⚠️ LLM did not generate new search queries or an error occurred. Proceeding with original keywords.")
+        else: st.session_state.processing_log.append("  ℹ️ No additional LLM queries requested based on calculation.")
+    oversample_factor: float = 2.0; max_google_fetch_per_keyword: int = 10 ; est_urls_to_fetch_per_keyword: int = min(max_google_fetch_per_keyword, int(num_results_wanted_per_keyword * oversample_factor))
     if est_urls_to_fetch_per_keyword < num_results_wanted_per_keyword: est_urls_to_fetch_per_keyword = num_results_wanted_per_keyword
-    
     total_llm_tasks_per_good_scrape: int = 0
     if llm_key_available: 
         if enable_llm_summary_val: total_llm_tasks_per_good_scrape += 1
         if llm_extract_query_input_val.strip(): total_llm_tasks_per_good_scrape +=1
-    
-    total_major_steps_for_progress: int = \
-        (len(keywords_list_val_runtime) * est_urls_to_fetch_per_keyword) + \
-        (len(keywords_list_val_runtime) * num_results_wanted_per_keyword * total_llm_tasks_per_good_scrape)
-    if enable_llm_query_generation_val and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0:
-        total_major_steps_for_progress +=1 
-    
-    current_major_step_count: int = 0
-    progress_bar_placeholder = st.empty() 
-
+    total_major_steps_for_progress: int = (len(keywords_list_val_runtime) * est_urls_to_fetch_per_keyword) + (len(keywords_list_val_runtime) * num_results_wanted_per_keyword * total_llm_tasks_per_good_scrape)
+    if enable_llm_query_generation_val and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0: total_major_steps_for_progress +=1 
+    current_major_step_count: int = 0; progress_bar_placeholder = st.empty() 
     if enable_llm_query_generation_val and llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0 :
         current_major_step_count +=1
-        with progress_bar_placeholder.container():
-             st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0,
-                        text="LLM Query Generation Complete...")
-
+        with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text="LLM Query Generation Complete...")
+    
+    # (Main Keyword Loop - same as v1.9.1 except for syntax fix)
+    # ...
     for keyword_val in keywords_list_val_runtime:
         st.session_state.processing_log.append(f"\n🔎 Processing keyword: {keyword_val}")
         with progress_bar_placeholder.container(): 
@@ -166,10 +134,8 @@ if start_button_val:
             current_major_step_count += 1 
             url_to_scrape_val: Optional[str] = search_item_val.get('link')
             if not url_to_scrape_val: st.session_state.processing_log.append(f"  - Item {search_item_idx+1} for '{keyword_val}' has no URL. Skipping."); continue
-            
-            progress_text_scrape = f"Scraping ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:50]}..." # Corrected line
+            progress_text_scrape = f"Scraping ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:50]}..."
             with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_scrape)
-            
             st.session_state.processing_log.append(f"  ➔ Attempting to scrape ({search_item_idx+1}/{len(search_results_items_val)}): {url_to_scrape_val}")
             scraped_content_val: scraper.ScrapedData = scraper.fetch_and_extract_content(url_to_scrape_val)
             item_data_val: Dict[str, Any] = {"keyword_searched": keyword_val, "url": url_to_scrape_val, "search_title": search_item_val.get('title'), "search_snippet": search_item_val.get('snippet'), "scraped_title": scraped_content_val.get('title'), "scraped_meta_description": scraped_content_val.get('meta_description'), "scraped_og_title": scraped_content_val.get('og_title'), "scraped_og_description": scraped_content_val.get('og_description'), "scraped_main_text": scraped_content_val.get('main_text'), "scraping_error": scraped_content_val.get('error'), "llm_summary": None, "llm_extracted_info": None, "timestamp": time.strftime("%Y-%m-%d %H:%M:%S") }
@@ -182,12 +148,12 @@ if start_button_val:
                         llm_api_key_to_use: Optional[str] = cfg.llm.google_gemini_api_key if cfg.llm.provider == "google" else cfg.llm.openai_api_key; llm_model_to_use: str = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize
                         if enable_llm_summary_val:
                             current_major_step_count +=1 
-                            progress_text_llm = f"LLM Summary ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..." # Corrected line
+                            progress_text_llm = f"LLM Summary ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..."
                             with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_llm)
                             st.session_state.processing_log.append(f"       Generating LLM summary ({cfg.llm.provider})..."); summary: Optional[str] = llm_processor.generate_summary(main_text_for_llm, api_key=llm_api_key_to_use, model_name=llm_model_to_use, max_input_chars=cfg.llm.max_input_chars); item_data_val["llm_summary"] = summary; st.session_state.processing_log.append(f"        Summary: {str(summary)[:100] if summary else 'Failed/Empty'}..."); time.sleep(0.1) 
                         if llm_extract_query_input_val.strip():
                             current_major_step_count +=1 
-                            progress_text_llm = f"LLM Extract ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..." # Corrected line
+                            progress_text_llm = f"LLM Extract ({current_major_step_count}/{total_major_steps_for_progress}): {url_to_scrape_val[:40]}..."
                             with progress_bar_placeholder.container(): st.progress(current_major_step_count / total_major_steps_for_progress if total_major_steps_for_progress > 0 else 0, text=progress_text_llm)
                             st.session_state.processing_log.append(f"      Extracting info ({cfg.llm.provider}): '{llm_extract_query_input_val}'..."); extracted_info: Optional[str] = llm_processor.extract_specific_information(main_text_for_llm, extraction_query=llm_extract_query_input_val, api_key=llm_api_key_to_use, model_name=llm_model_to_use, max_input_chars=cfg.llm.max_input_chars); item_data_val["llm_extracted_info"] = extracted_info; st.session_state.processing_log.append(f"        Extracted: {str(extracted_info)[:100] if extracted_info else 'Failed/Empty'}..."); time.sleep(0.1) 
                     st.session_state.results_data.append(item_data_val) 
@@ -196,8 +162,8 @@ if start_button_val:
         if successfully_scraped_for_this_keyword < num_results_wanted_per_keyword: st.session_state.processing_log.append(f"  ⚠️ For '{keyword_val}', only got {successfully_scraped_for_this_keyword}/{num_results_wanted_per_keyword} desired scrapes."); remaining_llm_tasks_for_keyword: int = (num_results_wanted_per_keyword - successfully_scraped_for_this_keyword) * total_llm_tasks_per_good_scrape; current_major_step_count += remaining_llm_tasks_for_keyword
     with progress_bar_placeholder.container(): st.empty() 
     
-    # (Consolidated Summary Generation - same as v1.8.1)
-    # ... (includes the corrected logic for all_valid_llm_outputs)
+    # (Consolidated Summary Generation - same as v1.9.1)
+    # ...
     consolidated_summary_text_for_batch: Optional[str] = None; topic_for_consolidation_for_batch: str = "Multiple Topics / Not Specified" 
     if st.session_state.results_data and llm_key_available and (enable_llm_summary_val or llm_extract_query_input_val.strip()): 
         st.session_state.processing_log.append(f"\n✨ Generating consolidated overview...")
@@ -227,7 +193,7 @@ if start_button_val:
                 st.session_state.processing_log.append(f"  Consolidated Overview (first 150 chars): {str(consolidated_summary_text_for_batch)[:150] if consolidated_summary_text_for_batch else 'Failed/Empty'}...")
         st.session_state.consolidated_summary_text = consolidated_summary_text_for_batch 
     
-    # (GSheets writing - same as v1.8.1)
+    # (GSheets writing - same as v1.9.1)
     # ...
     if st.session_state.sheet_writing_enabled and st.session_state.gs_worksheet:
         if st.session_state.results_data or st.session_state.consolidated_summary_text:
@@ -238,13 +204,12 @@ if start_button_val:
             else: st.session_state.processing_log.append(f"  ❌ Failed to write batch data to Google Sheets.")
     elif st.session_state.results_data: st.session_state.processing_log.append("\n⚠️ Google Sheets writing disabled. Data not saved to sheet.")
     
-    # (Final status - same as v1.8.1)
+    # (Final Status - same as v1.9.1)
     # ...
     if st.session_state.results_data or st.session_state.consolidated_summary_text: st.success("All processing complete!")
     else: st.warning("Processing complete, but no data was generated.")
 
-# (Display Sections - same as v1.8.1)
-# ...
+# --- Display Sections ---
 with results_container:
     if st.session_state.results_data: 
         st.markdown("---") 
@@ -264,32 +229,53 @@ with results_container:
             df_consolidated_summary_excel = pd.DataFrame(consolidated_data_excel)
         excel_file_bytes: bytes = to_excel(df_item_details, df_consolidated_summary_excel)
         st.download_button(label="📥 Download Results as Excel", data=excel_file_bytes, file_name=f"keyword_analysis_results_{time.strftime('%Y%m%d-%H%M%S')}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_button")
+    
     if st.session_state.get('consolidated_summary_text'):
         st.markdown("---"); st.subheader("✨ Consolidated Overview Result")
         if st.session_state.last_extract_query and st.session_state.last_extract_query.strip() and not str(st.session_state.consolidated_summary_text).lower().startswith("llm_processor: no individual items met the minimum relevancy score"): st.caption(f"Overview focused on: '{st.session_state.last_extract_query}'.")
         elif str(st.session_state.consolidated_summary_text).lower().startswith("llm_processor: no individual items met the minimum relevancy score"): st.warning(f"Could not generate focused overview for '{st.session_state.last_extract_query}'.")
         with st.container(border=True): st.markdown(st.session_state.consolidated_summary_text)
+    
     if st.session_state.results_data:
         st.subheader(f"📊 Individually Processed Content ({len(st.session_state.results_data)} item(s))")
         for i, item_val_display in enumerate(st.session_state.results_data):
             display_title_ui: str = item_val_display.get('scraped_title') or item_val_display.get('scraped_og_title') or item_val_display.get('search_title') or "Untitled"
             expander_title_ui: str = f"{item_val_display['keyword_searched']} | {display_title_ui} ({item_val_display.get('url')})"
+            
             with st.expander(expander_title_ui):
                 st.markdown(f"**URL:** [{item_val_display.get('url')}]({item_val_display.get('url')})")
                 if item_val_display.get('scraping_error'): st.error(f"Scraping Error: {item_val_display['scraping_error']}")
-                with st.container(border=True): st.markdown("**Scraped Metadata:**"); st.markdown(f"  - **Title:** {item_val_display.get('scraped_title', 'N/A')}\n  - **Meta Desc:** {item_val_display.get('scraped_meta_description', 'N/A')}\n  - **OG Title:** {item_val_display.get('scraped_og_title', 'N/A')}\n  - **OG Desc:** {item_val_display.get('scraped_og_description', 'N/A')}")
+                
+                with st.container(border=True): 
+                    st.markdown("**Scraped Metadata:**")
+                    st.markdown(f"  - **Title:** {item_val_display.get('scraped_title', 'N/A')}\n  - **Meta Desc:** {item_val_display.get('scraped_meta_description', 'N/A')}\n  - **OG Title:** {item_val_display.get('scraped_og_title', 'N/A')}\n  - **OG Desc:** {item_val_display.get('scraped_og_description', 'N/A')}")
+                
                 if item_val_display.get('scraped_main_text'):
-                    with st.popover("View Main Text", use_container_width=True): st.text_area(f"Main Text", value=item_val_display['scraped_main_text'], height=400, key=f"main_text_popover_{i}", disabled=True)
-                else: st.caption("No main text usable for LLM processing.")
+                    with st.popover("View Main Text", use_container_width=True): 
+                        st.text_area(f"Main Text", value=item_val_display['scraped_main_text'], height=400, key=f"main_text_popover_{i}", disabled=True)
+                else: 
+                    st.caption("No main text usable for LLM processing.")
+                
                 if item_val_display.get("llm_summary") or item_val_display.get("llm_extracted_info"):
                     st.markdown("**LLM Insights:**")
-                    if item_val_display.get("llm_summary"): with st.container(border=True): st.markdown(f"**Summary (LLM):**"); st.markdown(item_val_display["llm_summary"])
-                    if item_val_display.get("llm_extracted_info"): with st.container(border=True): st.markdown(f"**Extracted Info (LLM) for '{st.session_state.last_extract_query}':**"); st.text(item_val_display["llm_extracted_info"]) 
+                    # CORRECTED BLOCK FOR DISPLAYING LLM SUMMARY
+                    if item_val_display.get("llm_summary"):
+                        with st.container(border=True): # This 'with' was missing its own line
+                            st.markdown(f"**Summary (LLM):**") 
+                            st.markdown(item_val_display["llm_summary"])
+                    # CORRECTED BLOCK FOR DISPLAYING LLM EXTRACTED INFO
+                    if item_val_display.get("llm_extracted_info"): 
+                        with st.container(border=True): # This 'with' was missing its own line
+                            st.markdown(f"**Extracted Info (LLM) for '{st.session_state.last_extract_query}':**")
+                            st.text(item_val_display["llm_extracted_info"]) 
                 st.caption(f"Item Timestamp: {item_val_display.get('timestamp')}")
+
 with log_container: 
     if st.session_state.processing_log: 
-        with st.expander("📜 View Processing Log", expanded=False): st.code("\n".join(st.session_state.processing_log), language=None)
+        with st.expander("📜 View Processing Log", expanded=False): 
+            st.code("\n".join(st.session_state.processing_log), language=None)
+
 st.markdown("---")
-st.caption("Keyword Search & Analysis Tool v1.9.1") # Version updated
+st.caption("Keyword Search & Analysis Tool v1.9.2")
 
 # end of app.py
