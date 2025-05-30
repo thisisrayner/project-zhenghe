@@ -43,25 +43,25 @@ Docstring: Fetches content from the given URL and extracts metadata and main tex
 Module Docstring: Handles interactions with Large Language Models (LLMs) for text processing.
 
 ### def configure_gemini(api_key: Optional[str], force_recheck_models: bool = False) -> bool
-Docstring: None
+Docstring: Configures the Google Generative AI client with the provided API key.
 
 ### def _call_gemini_api(model_name: str, prompt_parts: List[str], generation_config_args: Optional[Dict[str, Any]] = None, safety_settings_args: Optional[List[Dict[str, Any]]] = None, max_retries: int = 3, initial_backoff_seconds: float = 5.0, max_backoff_seconds: float = 60.0) -> Optional[str]
-Docstring: None
+Docstring: Internal helper function to make a call to the Google Gemini API (generate_content).
 
 ### def _truncate_text_for_gemini(text: str, model_name: str, max_input_chars: int) -> str
-Docstring: None
+Docstring: Truncates text to a specified maximum number of characters.
 
 ### def generate_summary(text_content: Optional[str], api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 100000) -> Optional[str]
-Docstring: None
+Docstring: Generates a narrative summary for the given text content using Gemini.
 
 ### def extract_specific_information(text_content: Optional[str], extraction_query: str, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 100000) -> Optional[str]
-Docstring: None
+Docstring:     Extracts specific information based on a user's query from the text content using Gemini
 
 ### def _parse_score_and_get_content(text_with_potential_score: str) -> tuple[Optional[int], str]
-Docstring: None
+Docstring:     Parses a relevancy score from the beginning of a string (if present)
 
 ### def generate_consolidated_summary(summaries: List[Optional[str]], topic_context: str, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 150000, extraction_query_for_consolidation: Optional[str] = None) -> Optional[str]
-Docstring: None
+Docstring:     Generates a consolidated overview from a list of individual LLM outputs.
 
 ### def generate_search_queries(original_keywords: List[str], specific_info_query: Optional[str], num_queries_to_generate: int, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 2000) -> Optional[List[str]]
 Docstring: Generates a list of new search queries based on original keywords and a specific info query.
