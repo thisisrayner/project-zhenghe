@@ -55,7 +55,7 @@ Docstring: Truncates text to a specified maximum number of characters.
 Docstring: Generates a narrative summary for the given text content using Gemini.
 
 ### def extract_specific_information(text_content: Optional[str], extraction_query: str, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 100000) -> Optional[str]
-Docstring: Extracts specific information based on a user's query from the text content using Gemini.
+Docstring:     Extracts specific information based on a user's query from the text content using Gemini
 
 ### def generate_consolidated_summary(summaries: List[Optional[str]], topic_context: str, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 150000) -> Optional[str]
 Docstring: Generates a consolidated overview from a list of individual summaries or text snippets.
