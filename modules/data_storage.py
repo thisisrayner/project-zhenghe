@@ -1,48 +1,24 @@
 # modules/data_storage.py
-# Version 1.5.1: Corrected keys for retrieving meta/OG data for GSheet export.
-# Implements unified header and writes batch summary row before itemized data.
+# Version 1.5.2: Refined ensure_master_header for blank sheets; confirmed meta/OG keys.
+# Includes "Content Type" in MASTER_HEADER.
 
 """
 Handles data storage operations, primarily focused on Google Sheets integration.
-
-This module provides functions to:
-- Connect to a specified Google Sheet using service account credentials.
-- Ensure a master header row exists in the worksheet.
-- Write batch summary information and detailed item data in a structured format.
-It uses the `gspread` library for Google Sheets API interactions.
 """
 
 import gspread
 from google.oauth2.service_account import Credentials
-import streamlit as st # For @st.cache_resource and UI elements in direct test
+import streamlit as st
 from typing import Dict, List, Optional, Any
-import time # For timestamp in test block
+import time
 
-# --- Google Sheets Client Initialization (Cached) ---
 @st.cache_resource
 def get_gspread_worksheet(
     service_account_info: Optional[Dict[str, Any]],
-    spreadsheet_id: Optional[str],       # Primary identifier for the sheet
-    spreadsheet_name: Optional[str],   # Fallback or for display purposes
-    worksheet_name: str = "Sheet1"     # Default worksheet name if not specified
+    spreadsheet_id: Optional[str],
+    spreadsheet_name: Optional[str],
+    worksheet_name: str = "Sheet1"
 ) -> Optional[gspread.Worksheet]:
-    """
-    Authorizes gspread client with service account info and returns the specified worksheet.
-
-    Prioritizes opening the spreadsheet by its ID if provided; otherwise,
-    falls back to opening by name. Caches the worksheet object for the session
-    to avoid repeated authentications.
-
-    Args:
-        service_account_info: A dictionary containing the service account credentials.
-        spreadsheet_id: The unique ID of the Google Spreadsheet.
-        spreadsheet_name: The name of the Google Spreadsheet.
-        worksheet_name: The name of the specific worksheet (tab) to open.
-
-    Returns:
-        A gspread.Worksheet object if connection and worksheet retrieval are successful,
-        otherwise None. Errors are displayed using st.error/st.warning.
-    """
     if not service_account_info:
         st.error("Google Sheets Error: Service account information not provided in secrets.")
         return None
@@ -91,11 +67,11 @@ def get_gspread_worksheet(
             st.error("Google Sheets Error: Could not open spreadsheet using provided ID or Name.")
             return None
 
-        worksheet_obj: Optional[gspread.Worksheet] = None # Renamed to avoid conflict with worksheet_name param
+        worksheet_obj: Optional[gspread.Worksheet] = None
         try:
             worksheet_obj = spreadsheet.worksheet(worksheet_name)
         except gspread.exceptions.WorksheetNotFound:
-            if worksheet_name == "Sheet1" and spreadsheet.sheet1: # Check if sheet1 attribute exists
+            if worksheet_name == "Sheet1" and hasattr(spreadsheet, 'sheet1') and spreadsheet.sheet1:
                 st.info(f"Worksheet '{worksheet_name}' not found in '{spreadsheet.title}'. Using the first available sheet ('{spreadsheet.sheet1.title}').")
                 worksheet_obj = spreadsheet.sheet1
             else:
@@ -108,56 +84,86 @@ def get_gspread_worksheet(
         st.error(f"Google Sheets connection/setup main error: {e}")
         return None
 
-# --- UNIFIED MASTER HEADER for the Google Sheet ---
 MASTER_HEADER: List[str] = [
-    "Record Type",
-    "Batch Timestamp",
-    "Batch Consolidated Summary",
-    "Batch Topic/Keywords",
-    "Items in Batch",
-    "Item Timestamp",
-    "Keyword Searched",
-    "URL",
-    "Search Result Title",
-    "Search Result Snippet",
-    "Scraped Page Title",
-    "Scraped Meta Description",
-    "Scraped OG Title",
-    "Scraped OG Description",
-    "Content Type", # Added Content Type as it's useful and likely scraped
-    "LLM Summary (Individual)",
-    "LLM Extracted Info (Query)",
-    "LLM Extraction Query",
-    "Scraping Error",
-    "Main Text (Truncated)"
+    "Record Type",              # A
+    "Batch Timestamp",          # B
+    "Batch Consolidated Summary", # C
+    "Batch Topic/Keywords",     # D
+    "Items in Batch",           # E
+    "Item Timestamp",           # F
+    "Keyword Searched",         # G
+    "URL",                      # H
+    "Search Result Title",      # I
+    "Search Result Snippet",    # J
+    "Scraped Page Title",       # K
+    "Scraped Meta Description", # L
+    "Scraped OG Title",         # M
+    "Scraped OG Description",   # N
+    "Content Type",             # O << IMPORTANT FOR ALIGNMENT
+    "LLM Summary (Individual)", # P
+    "LLM Extracted Info (Query)",# Q
+    "LLM Extraction Query",     # R
+    "Scraping Error",           # S
+    "Main Text (Truncated)"     # T
 ]
 
 def ensure_master_header(worksheet: gspread.Worksheet) -> None:
     """
     Ensures the MASTER_HEADER is present in Row 1 of the worksheet.
+    If Row 1 is empty or doesn't exist (CellNotFound), it writes the header.
+    If Row 1 exists but doesn't match, it logs a warning.
     """
     try:
-        current_row1_values = worksheet.row_values(1)
+        # Try to get the first row. If it's empty or doesn't exist, we write the header.
+        current_row1_values = worksheet.row_values(1) # This might throw an error if sheet is REALLY empty
+
         if not current_row1_values or all(cell == '' for cell in current_row1_values):
+            # Row 1 is empty or all cells are blank strings
             worksheet.update('A1', [MASTER_HEADER], value_input_option='USER_ENTERED')
-            # st.info(f"Initialized worksheet '{worksheet.title}' with MASTER_HEADER in Row 1.") # Can be verbose
-        elif current_row1_values != MASTER_HEADER:
-            st.warning(
-                f"Worksheet '{worksheet.title}' Row 1 header does not match the expected MASTER_HEADER. "
-                "Data will be appended according to the new structure, which might misalign with existing data. "
-                "Consider clearing the sheet or manually adjusting the header if this is unintended."
-            )
-    except gspread.exceptions.APIError as e:
-        if 'exceeds grid limits' in str(e).lower() or isinstance(e, (gspread.exceptions.CellNotFound, IndexError)):
-            worksheet.update('A1', [MASTER_HEADER], value_input_option='USER_ENTERED')
-            # st.info(f"Initialized empty worksheet '{worksheet.title}' with MASTER_HEADER (APIError/IndexError catch).") # Can be verbose
+            st.info(f"INFO: Wrote MASTER_HEADER to Row 1 of empty/blank worksheet '{worksheet.title}'.")
+        elif current_row1_values == MASTER_HEADER:
+            # Header is present and matches, nothing to do.
+            # st.info("INFO: MASTER_HEADER already present and matches in Row 1.") # Can be verbose
+            pass
         else:
-            st.error(f"Google Sheets API error while ensuring header: {e}")
+            # Header exists but does not match the expected MASTER_HEADER.
+            st.warning(
+                f"WARNING: Worksheet '{worksheet.title}' Row 1 header does not match the expected MASTER_HEADER. "
+                f"Data alignment issues may occur. Consider clearing the sheet manually and rerunning "
+                f"to ensure the correct header is written. "
+                f"Current: {len(current_row1_values)} cols. Expected: {len(MASTER_HEADER)} cols."
+            )
+            # Optionally, you could force an update here, but it's safer to warn.
+            # worksheet.update('A1', [MASTER_HEADER], value_input_option='USER_ENTERED')
+            # st.info(f"INFO: Force updated non-matching header on worksheet '{worksheet.title}'.")
+
+
+    except (gspread.exceptions.APIError, IndexError, gspread.exceptions.CellNotFound) as e:
+        # Catch errors typical of an empty sheet or a sheet where row 1 doesn't exist.
+        # Example APIError for empty sheet: "Requested entity was not found." when trying row_values(1)
+        # CellNotFound can also occur if trying .acell('A1') on a truly empty sheet.
+        # IndexError can occur if row_values(1) returns None or an empty list internally in some gspread versions.
+        
+        # Check if it's an API error about range/grid if possible, but be more general for empty sheets
+        is_likely_empty_sheet_error = False
+        if isinstance(e, gspread.exceptions.APIError):
+            if 'exceeds grid limits' in str(e).lower() or 'not found' in str(e).lower():
+                 is_likely_empty_sheet_error = True
+        elif isinstance(e, (IndexError, gspread.exceptions.CellNotFound)):
+            is_likely_empty_sheet_error = True
+
+        if is_likely_empty_sheet_error:
+            worksheet.update('A1', [MASTER_HEADER], value_input_option='USER_ENTERED')
+            st.info(f"INFO: Wrote MASTER_HEADER to Row 1 of empty worksheet '{worksheet.title}' (caught typical empty sheet error: {type(e).__name__}).")
+        else:
+            # Re-raise if it's a different kind of API error
+            st.error(f"ERROR: Google Sheets API error while ensuring header (unrelated to empty sheet): {e}")
+            raise
     except Exception as e:
-        st.error(f"Unexpected error while ensuring header in Google Sheets: {e}")
+        st.error(f"ERROR: Unexpected error while ensuring header in Google Sheets: {e}")
+        raise
 
 
-# --- Write Data Functions ---
 def write_batch_summary_and_items_to_sheet(
     worksheet: gspread.Worksheet,
     batch_timestamp: str,
@@ -167,9 +173,6 @@ def write_batch_summary_and_items_to_sheet(
     extraction_query_text: Optional[str] = None,
     main_text_truncate_limit: int = 10000
 ) -> bool:
-    """
-    Writes a batch summary row followed by individual item detail rows to the Google Sheet.
-    """
     if not worksheet:
         st.error("Google Sheets Error: No valid worksheet provided for writing batch data.")
         return False
@@ -189,7 +192,7 @@ def write_batch_summary_and_items_to_sheet(
         main_text = item_detail.get("scraped_main_text", "")
         truncated_main_text = (main_text[:main_text_truncate_limit] + "..." if (main_text and len(main_text) > main_text_truncate_limit) else main_text)
         
-        item_row_dict: Dict[str, Any] = {header: "" for header in MASTER_HEADER}
+        item_row_dict: Dict[str, Any] = {header: "" for header in MASTER_HEADER} # Init with blanks
         item_row_dict["Record Type"] = "Item Detail"
         item_row_dict["Batch Timestamp"] = batch_timestamp
         
@@ -200,13 +203,11 @@ def write_batch_summary_and_items_to_sheet(
         item_row_dict["Search Result Snippet"] = item_detail.get("search_snippet", "")
         item_row_dict["Scraped Page Title"] = item_detail.get("scraped_title", "")
         
-        # --- THE FIX ---
-        item_row_dict["Scraped Meta Description"] = item_detail.get("meta_description", "") # Use 'meta_description'
-        item_row_dict["Scraped OG Title"] = item_detail.get("og_title", "")                 # Use 'og_title'
-        item_row_dict["Scraped OG Description"] = item_detail.get("og_description", "")     # Use 'og_description'
-        # --- END OF FIX ---
-
-        item_row_dict["Content Type"] = item_detail.get("content_type", "") # Added Content Type
+        item_row_dict["Scraped Meta Description"] = item_detail.get("meta_description", "") # Corrected key
+        item_row_dict["Scraped OG Title"] = item_detail.get("og_title", "")                 # Corrected key
+        item_row_dict["Scraped OG Description"] = item_detail.get("og_description", "")     # Corrected key
+        
+        item_row_dict["Content Type"] = item_detail.get("content_type", "") # Included "Content Type"
         item_row_dict["LLM Summary (Individual)"] = item_detail.get("llm_summary", "")
         item_row_dict["LLM Extracted Info (Query)"] = item_detail.get("llm_extracted_info", "")
         item_row_dict["LLM Extraction Query"] = extraction_query_text if item_detail.get("llm_extracted_info") else ""
@@ -216,7 +217,6 @@ def write_batch_summary_and_items_to_sheet(
         rows_to_append.append([item_row_dict.get(col_name, "") for col_name in MASTER_HEADER])
 
     if not rows_to_append:
-        # st.info("Google Sheets: No data (batch summary or items) formatted for writing.") # Can be verbose
         return False
         
     try:
@@ -226,12 +226,11 @@ def write_batch_summary_and_items_to_sheet(
         st.error(f"Google Sheets Error: Failed to write batch data rows: {e}")
         return False
 
-# --- if __name__ == '__main__': block for testing ---
 if __name__ == '__main__':
     st.set_page_config(layout="wide")
-    st.title("Data Storage Module Test (Google Sheets v1.5.1 - Key Fix)")
+    st.title("Data Storage Module Test (Google Sheets v1.5.2 - Header/Key Fixes)")
     try:
-        from config import load_config # Assumes config.py is in PYTHONPATH or same dir for test
+        from config import load_config
         cfg_test = load_config()
         
         if cfg_test and cfg_test.gsheets.service_account_info and \
@@ -245,32 +244,38 @@ if __name__ == '__main__':
             )
             if worksheet_test:
                 st.success(f"Successfully connected to: {worksheet_test.spreadsheet.title} -> {worksheet_test.title}")
-                ensure_master_header(worksheet_test)
                 
+                if st.button("TEST: Ensure Master Header (Clear Sheet Manually First for best test)"):
+                    ensure_master_header(worksheet_test)
+                    st.write("Ensure Master Header call completed. Check sheet and logs.")
+
                 st.subheader("Test Data Writing")
                 if st.button("Write Sample Batch Data"):
+                    # First ensure header is there from this session
+                    ensure_master_header(worksheet_test)
+
                     test_batch_timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-                    test_consolidated_summary = "Overall summary for 'sample testing' batch."
-                    test_topic_context = "Sample Testing Keywords"
+                    test_consolidated_summary = "Overall summary for 'sample testing' batch from v1.5.2."
+                    test_topic_context = "Sample Testing Keywords (v1.5.2)"
                     test_item_list = [
                         {
                             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "keyword_searched": "sample testing",
-                            "url": "http://example.com/test1", "search_title": "Test Page 1",
+                            "url": "http://example.com/test1-v152", "search_title": "Test Page 1",
                             "scraped_title": "Scraped Test Page 1", 
-                            "meta_description": "This is a sample meta description for test1.", # Test data
-                            "og_title": "OG Title for Test1", # Test data
-                            "og_description": "OG Description for Test1.", # Test data
+                            "meta_description": "This is a sample meta description for test1.",
+                            "og_title": "OG Title for Test1",
+                            "og_description": "OG Description for Test1.",
                             "content_type": "html",
                             "llm_summary": "Individual summary for test page 1.",
                             "scraped_main_text": "Main content of test page 1..." * 10
                         },
                         {
                             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"), "keyword_searched": "sample testing",
-                            "url": "http://example.com/test2", "search_title": "Test Page 2",
+                            "url": "http://example.com/test2-v152", "search_title": "Test Page 2",
                             "scraped_title": "Scraped Test Page 2",
-                            "meta_description": "Another meta for test2.", # Test data
-                            "og_title": "Test2 OpenGraph Title", # Test data
-                            "og_description": "Test2 OpenGraph Description is quite nice.", # Test data
+                            "meta_description": "Another meta for test2.",
+                            "og_title": "Test2 OpenGraph Title",
+                            "og_description": "Test2 OpenGraph Description is quite nice.",
                             "content_type": "pdf",
                             "llm_extracted_info": "Specific info: datum A, datum B.",
                             "scraping_error": "Minor scrape warning here.",
