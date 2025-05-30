@@ -1,5 +1,5 @@
 # modules/llm_processor.py
-# Version 1.7: Enhanced docstrings, type hinting, and comments.
+# Version 1.7.1: Added relevancy scoring to extract_specific_information.
 # Default model remains gemini-1.5-flash-latest.
 
 """
@@ -9,7 +9,7 @@ Currently configured to primarily use Google's Gemini models via the
 `google-generativeai` library. It includes functionalities for:
 - Configuring the LLM client.
 - Generating summaries of text content.
-- Extracting specific information based on user queries.
+- Extracting specific information based on user queries, including a relevancy score.
 - Generating a consolidated overview from multiple text summaries.
 - Implements exponential backoff and retries for API calls to handle rate limits.
 """
@@ -66,8 +66,6 @@ def configure_gemini(api_key: Optional[str], force_recheck_models: bool = False)
                 if not _AVAILABLE_MODELS_CACHE:
                     st.warning("LLM_PROCESSOR: No Gemini models found supporting 'generateContent'. "
                                "Check API key permissions, GCP project, and enabled GenAI/VertexAI services.")
-                    # If no models, true configuration isn't complete for practical use.
-                    # However, the API key itself might be valid. For now, let's return False if no models.
                     return False 
             except Exception as e_list_models:
                 st.error(f"LLM_PROCESSOR: Error listing Gemini models: {e_list_models}. "
@@ -134,8 +132,6 @@ def _call_gemini_api(
     generation_config = genai.types.GenerationConfig(**effective_gen_config_params)
 
     # Prepare safety settings
-    # BLOCK_ONLY_HIGH is generally safer for diverse web content than BLOCK_MEDIUM_AND_ABOVE.
-    # Adjust thresholds based on content sensitivity and desired filtering.
     safety_settings = safety_settings_args or [
         {"category": cat, "threshold": "BLOCK_ONLY_HIGH"} for cat in [
             "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
@@ -156,50 +152,44 @@ def _call_gemini_api(
                 stream=False # Keep stream False for simpler response handling
             )
 
-            # Check for content blocks or empty responses from the API.
             if not response.candidates:
                 reason_message = "LLM_PROCESSOR: Response was blocked by API or empty."
                 if response.prompt_feedback:
                     reason_message += f" Reason: {response.prompt_feedback.block_reason}."
                     if response.prompt_feedback.block_reason_message:
                          reason_message += f" Message: {response.prompt_feedback.block_reason_message}"
-                    # Log specific safety categories that caused a block
                     if response.prompt_feedback.safety_ratings:
                         for rating in response.prompt_feedback.safety_ratings:
-                            if rating.blocked: # `blocked` attribute indicates if this category caused the block
-                                reason_message += f" Blocked by safety category: {rating.category} (Severity: {rating.probability.name})." # Use probability name for more info
-                print(reason_message) # Log to console for server-side debugging
-                return reason_message # Return the block message to the caller
+                            if rating.blocked: 
+                                reason_message += f" Blocked by safety category: {rating.category} (Severity: {rating.probability.name})."
+                print(reason_message) 
+                return reason_message 
             
-            # If successful, return the generated text.
             return response.text.strip() if response.text else "LLM_PROCESSOR: Received an empty text response."
 
         except Exception as e:
             error_str = str(e).lower()
-            # Check for common rate limit / resource exhaustion errors.
             is_rate_limit_error = (
-                "429" in error_str or # HTTP status code for Too Many Requests
+                "429" in error_str or 
                 "resourceexhausted" in error_str.replace(" ", "") or
                 "resource exhausted" in error_str or
                 ("rate" in error_str and "limit" in error_str) or
-                (hasattr(e, 'details') and callable(e.details) and "Quota" in e.details()) or # Some gRPC errors
-                (hasattr(e, 'code') and callable(e.code) and e.code().value == 8) # gRPC status code 8 is RESOURCE_EXHAUSTED
+                (hasattr(e, 'details') and callable(e.details) and "Quota" in e.details()) or 
+                (hasattr(e, 'code') and callable(e.code) and e.code().value == 8) 
             )
 
             if is_rate_limit_error and current_retry < max_retries:
                 current_retry += 1
                 retry_log_message = (f"LLM_PROCESSOR: Rate limit hit for '{validated_model_name}'. "
                                      f"Retrying in {current_backoff:.1f}s (Attempt {current_retry}/{max_retries}). "
-                                     f"Error: {str(e)[:100]}...") # Log snippet of error
-                print(retry_log_message) # Log retries to console
+                                     f"Error: {str(e)[:100]}...") 
+                print(retry_log_message) 
                 time.sleep(current_backoff)
-                # Exponential backoff with jitter
                 current_backoff = min(current_backoff * 2 + random.uniform(0, 1.0), max_backoff_seconds)
-            else: # Not a retriable error, or max retries have been reached.
+            else: 
                 print(f"LLM_PROCESSOR: Unrecoverable error for '{validated_model_name}': {e.__class__.__name__} - {str(e)[:500]}")
                 return f"LLM Error for '{validated_model_name}': {e.__class__.__name__} - {str(e)[:500]}"
     
-    # If loop finishes due to max_retries
     return f"LLM_PROCESSOR Error: Max retries ({max_retries}) reached for '{validated_model_name}' due to persistent rate limiting."
 
 
@@ -216,11 +206,7 @@ def _truncate_text_for_gemini(text: str, model_name: str, max_input_chars: int) 
     Returns:
         The truncated text, or the original text if it's within the limit.
     """
-    # For Gemini 1.5 models with 1M token context, this char limit is very conservative.
-    # It's more about managing processing time and cost for this specific app.
     if len(text) > max_input_chars:
-        # Consider logging this truncation event if it's important for debugging.
-        # print(f"DEBUG (_truncate_text_for_gemini): Text truncated from {len(text)} to {max_input_chars} chars for {model_name}.")
         return text[:max_input_chars]
     return text
 
@@ -228,7 +214,7 @@ def generate_summary(
     text_content: Optional[str],
     api_key: Optional[str],
     model_name: str = "models/gemini-1.5-flash-latest",
-    max_input_chars: int = 100000 # Approx. 25k tokens, well within Flash's context
+    max_input_chars: int = 100000 
 ) -> Optional[str]:
     """
     Generates a narrative summary for the given text content using Gemini.
@@ -244,12 +230,11 @@ def generate_summary(
     """
     if not text_content:
         return "LLM_PROCESSOR: No text content provided for summary."
-    if not configure_gemini(api_key): # Ensures API key is set and client is configured
+    if not configure_gemini(api_key): 
         return "LLM_PROCESSOR Error: Gemini LLM not configured for summary (API key or model issue)."
 
     truncated_text = _truncate_text_for_gemini(text_content, model_name, max_input_chars)
     
-    # Refined prompt for better, more direct summaries
     prompt = (
         "You are an expert assistant specializing in creating detailed and insightful summaries of web page content.\n"
         "Analyze the following text and provide a comprehensive summary of approximately 4-6 substantial sentences (or 2-3 short paragraphs if the content is rich). "
@@ -262,8 +247,8 @@ def generate_summary(
     )
     return _call_gemini_api(
         model_name,
-        [prompt], # Gemini API expects a list for prompt_parts
-        generation_config_args={"max_output_tokens": 512} # Allow for a reasonably detailed summary
+        [prompt], 
+        generation_config_args={"max_output_tokens": 512} 
     )
 
 def extract_specific_information(
@@ -274,7 +259,15 @@ def extract_specific_information(
     max_input_chars: int = 100000
 ) -> Optional[str]:
     """
-    Extracts specific information based on a user's query from the text content using Gemini.
+    Extracts specific information based on a user's query from the text content using Gemini
+    and includes a relevancy score as the first line of the output.
+
+    The relevancy score is determined based on the number of distinct pieces of information
+    found related to the extraction_query:
+    - 5/5: 5 or more pieces of information.
+    - 4/5: Exactly 4 pieces of information.
+    - 3/5: 1, 2, or 3 pieces of information.
+    - 1/5: No information found.
 
     Args:
         text_content: The main textual content.
@@ -284,39 +277,49 @@ def extract_specific_information(
         max_input_chars: Maximum characters of `text_content` to send.
 
     Returns:
-        A string containing the extracted information, or an error/status message.
+        A string starting with "Relevancy Score: X/5\n" followed by the extracted
+        information, or an error/status message.
     """
     if not text_content:
         return "LLM_PROCESSOR: No text content provided for extraction."
-    if not extraction_query: # Should be validated by caller (app.py) too
+    if not extraction_query: 
         return "LLM_PROCESSOR: No extraction query provided."
     if not configure_gemini(api_key):
         return "LLM_PROCESSOR Error: Gemini LLM not configured for extraction."
 
     truncated_text = _truncate_text_for_gemini(text_content, model_name, max_input_chars)
+    
     prompt = (
-        "You are a highly skilled information extraction assistant.\n"
-        f"Carefully review the following web page content. Your task is to extract information specifically related to: '{extraction_query}'.\n"
-        "Present your findings comprehensively and clearly. If the requested information or any part of it cannot be found in the text, "
-        "explicitly state 'Information not found for [specific part of query]' or 'The requested information was not found in the provided text'. "
-        "If multiple pieces of information are requested, address each one directly.\n\n"
+        "You are a highly skilled information extraction and relevancy scoring assistant.\n"
+        f"Your primary task is to analyze the following web page content based on the user's query: '{extraction_query}'.\n\n"
+        "First, you MUST determine a relevancy score by counting how many distinct pieces of information you find that are directly related to the query '{extraction_query}'. Follow these scoring guidelines precisely:\n"
+        "- **Relevancy Score: 5/5** - Awarded if you find 5 or more distinct pieces of information directly related to '{extraction_query}'.\n"
+        "- **Relevancy Score: 4/5** - Awarded if you find exactly 4 distinct pieces of information directly related to '{extraction_query}'.\n"
+        "- **Relevancy Score: 3/5** - Awarded if you find 1, 2, or 3 distinct pieces of information directly related to '{extraction_query}'.\n"
+        "- **Relevancy Score: 1/5** - Awarded if you find no distinct pieces of information directly related to '{extraction_query}'.\n\n"
+        "The VERY FIRST line of your response MUST be the relevancy score in the format 'Relevancy Score: X/5'.\n\n"
+        "After the relevancy score, starting on a new line, present the extracted information comprehensively and clearly. "
+        "List or detail each piece of information you found that contributed to the score. "
+        "If, after thorough review, no relevant information is found (leading to a 1/5 score), "
+        "after stating 'Relevancy Score: 1/5', on the next line you should explicitly state 'No distinct pieces of information related to \"{extraction_query}\" were found in the provided text'.\n\n"
         "--- WEB PAGE CONTENT START ---\n"
         f"{truncated_text}\n"
         "--- WEB PAGE CONTENT END ---\n\n"
-        f"Comprehensive Extracted Information regarding '{extraction_query}':"
+        f"Response (starting with Relevancy Score) regarding '{extraction_query}':"
     )
+    
     return _call_gemini_api(
         model_name,
-        [prompt],
-        generation_config_args={"max_output_tokens": 700} # Allow more tokens for potentially detailed extractions
+        [prompt], 
+        generation_config_args={"max_output_tokens": 750} 
     )
 
 def generate_consolidated_summary(
-    summaries: List[Optional[str]], # List of individual summaries or relevant text snippets
+    summaries: List[Optional[str]], 
     topic_context: str,
     api_key: Optional[str],
-    model_name: str = "models/gemini-1.5-flash-latest", # Flash for cost, Pro for potentially better synthesis
-    max_input_chars: int = 150000 # Max chars for the combined input of summaries
+    model_name: str = "models/gemini-1.5-flash-latest", 
+    max_input_chars: int = 150000 
 ) -> Optional[str]:
     """
     Generates a consolidated overview from a list of individual summaries or text snippets.
@@ -334,12 +337,11 @@ def generate_consolidated_summary(
     if not summaries:
         return "LLM_PROCESSOR: No individual summaries provided for consolidation."
     
-    # Filter out None, empty, or known error/placeholder strings from individual LLM outputs
     valid_texts_for_consolidation = [
         s for s in summaries if s and
         not s.lower().startswith("llm error") and
         not s.lower().startswith("no text content") and
-        not s.lower().startswith("please provide the web page content") # Filter out placeholders
+        not s.lower().startswith("please provide the web page content") 
     ]
     if not valid_texts_for_consolidation:
         return "LLM_PROCESSOR: No valid individual LLM outputs available to consolidate."
@@ -347,7 +349,6 @@ def generate_consolidated_summary(
     if not configure_gemini(api_key):
         return "LLM_PROCESSOR Error: Gemini LLM not configured for consolidated summary."
 
-    # Format the input for the consolidation prompt
     summary_entries = []
     for i, s_text in enumerate(valid_texts_for_consolidation):
         summary_entries.append(f"Source Document {i+1} Content:\n{s_text}")
@@ -371,19 +372,20 @@ def generate_consolidated_summary(
     return _call_gemini_api(
         model_name,
         [prompt],
-        generation_config_args={"max_output_tokens": 800} # Allow more tokens for a detailed consolidated summary
+        generation_config_args={"max_output_tokens": 800} 
     )
 
 # --- if __name__ == '__main__': block for testing ---
 if __name__ == '__main__':
     st.set_page_config(layout="wide")
-    st.title("LLM Processor Module Test (Google Gemini v1.7 - Docs & Hints)")
-    # ... (Test block from v1.6.1 or v1.5.1, can be kept or simplified) ...
-    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password")
-    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest")
+    st.title("LLM Processor Module Test (Google Gemini v1.7.1 - Relevancy Score)") # Updated title
+    
+    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="api_key_test")
+    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="model_name_test")
+    
     configured_for_test = False
     if GEMINI_API_KEY_TEST:
-        if configure_gemini(GEMINI_API_KEY_TEST, force_recheck_models=True): # Force recheck for direct test
+        if configure_gemini(GEMINI_API_KEY_TEST, force_recheck_models=True): 
             st.success(f"Gemini configured for testing with model: {MODEL_NAME_TEST}.")
             if _AVAILABLE_MODELS_CACHE:
                  st.write("Available Models (first 5 from cache):", _AVAILABLE_MODELS_CACHE[:5])
@@ -393,34 +395,68 @@ if __name__ == '__main__':
     else:
         st.info("Enter Gemini API Key to enable tests.")
 
-    sample_text_content_1 = st.text_area("Sample Text 1 for LLM:", "The sky is blue due to Rayleigh scattering. This scattering affects electromagnetic radiation whose wavelength is longer than the scattering particles.", height=100)
-    sample_text_content_2 = st.text_area("Sample Text 2 for LLM:", "Oceans appear blue because water absorbs red light more than blue. Blue light penetrates deeper.", height=100)
-    
+    st.subheader("Test Individual Summary")
+    sample_text_summary = st.text_area("Sample Text for Summary:", 
+                                       "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France. "
+                                       "It is named after the engineer Gustave Eiffel, whose company designed and built the tower. "
+                                       "Constructed from 1887 to 1889 as the entrance to the 1889 World's Fair, it was initially criticized by some of France's leading artists and intellectuals for its design, but it has become a global cultural icon of France and one of the most recognizable structures in the world.", 
+                                       height=150, key="sample_summary_text")
     if configured_for_test:
-        st.subheader("Test Individual Summary")
-        if st.button("Test Summary for Text 1"):
+        if st.button("Test Summary Generation", key="test_summary_button"):
              with st.spinner(f"Generating summary with {MODEL_NAME_TEST}..."):
-                summary1 = generate_summary(sample_text_content_1, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
-             st.markdown("**Summary 1:**"); st.write(summary1)
+                summary_output = generate_summary(sample_text_summary, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
+             st.markdown("**Generated Summary:**"); st.write(summary_output)
 
-        st.subheader("Test Consolidation")
-        if st.button("Test Consolidation of Summaries"):
-            # For a proper test, generate summaries first
-            s1 = generate_summary(sample_text_content_1, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
-            s2 = generate_summary(sample_text_content_2, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
-            st.write("Individual Summary 1 for consolidation:", s1)
-            st.write("Individual Summary 2 for consolidation:", s2)
-            if s1 and s2 and not s1.startswith("LLM") and not s2.startswith("LLM"): # Check they are actual summaries
-                with st.spinner("Generating consolidated summary..."):
-                    consolidated = generate_consolidated_summary(
-                        [s1, s2], 
-                        "Color of Sky and Ocean", 
+    st.subheader("Test Specific Information Extraction (with Relevancy Score)")
+    sample_text_extraction = st.text_area("Sample Text for Extraction:", 
+                                          "Quantum computing harnesses the principles of quantum mechanics to solve complex problems beyond the reach of classical computers. Key concepts include qubits, superposition, and entanglement. Qubits, unlike classical bits which are 0 or 1, can exist in multiple states simultaneously due to superposition. Entanglement links qubits in such a way that their fates are intertwined, regardless of the distance separating them. Potential applications include drug discovery, materials science, financial modeling, and cryptography. Major challenges involve qubit stability (decoherence) and error correction. Several companies like Google, IBM, and Microsoft are actively researching and building quantum processors.", 
+                                          height=200, key="sample_extraction_text")
+    extraction_query_test = st.text_input("Extraction Query (e.g., 'key concepts and challenges'):", "key concepts, challenges, and major companies", key="extraction_query_input")
+
+    if configured_for_test:
+        if st.button("Test Extraction & Relevancy Scoring", key="test_extraction_button"):
+            if not extraction_query_test:
+                st.warning("Please enter an extraction query.")
+            else:
+                with st.spinner(f"Extracting info with {MODEL_NAME_TEST}..."):
+                    extraction_output = extract_specific_information(
+                        sample_text_extraction, 
+                        extraction_query_test, 
                         GEMINI_API_KEY_TEST, 
                         model_name=MODEL_NAME_TEST
                     )
-                st.markdown("**Consolidated Summary:**"); st.write(consolidated)
+                st.markdown("**Extraction Output (with Relevancy Score):**"); st.text(extraction_output) # Using st.text to preserve newlines accurately
+
+    st.subheader("Test Consolidation")
+    consolidate_text_1 = st.text_area("Text 1 for Consolidation:", 
+                                      "Summary: Project Alpha aims to reduce carbon emissions by 20% using new solar panel technology. Key finding: efficiency increased by 5% in desert conditions.", 
+                                      height=100, key="consolidate_text1")
+    consolidate_text_2 = st.text_area("Text 2 for Consolidation:", 
+                                      "Extraction: Project Alpha focuses on solar energy. Challenges include scaling production of the new panels and initial investment costs. No mention of wind power.", 
+                                      height=100, key="consolidate_text2")
+    consolidation_topic = st.text_input("Topic for Consolidation:", "Project Alpha Overview", key="consolidation_topic_input")
+    
+    if configured_for_test:
+        if st.button("Test Consolidation of Texts", key="test_consolidation_button"):
+            if not consolidation_topic:
+                st.warning("Please enter a topic for consolidation.")
             else:
-                st.warning("Could not generate valid individual summaries to test consolidation.")
+                texts_to_consolidate = []
+                if consolidate_text_1: texts_to_consolidate.append(consolidate_text_1)
+                if consolidate_text_2: texts_to_consolidate.append(consolidate_text_2)
+
+                if not texts_to_consolidate:
+                    st.warning("Please provide at least one text for consolidation.")
+                else:
+                    with st.spinner("Generating consolidated summary..."):
+                        consolidated_output = generate_consolidated_summary(
+                            texts_to_consolidate, 
+                            consolidation_topic, 
+                            GEMINI_API_KEY_TEST, 
+                            model_name=MODEL_NAME_TEST
+                        )
+                    st.markdown("**Consolidated Output:**"); st.write(consolidated_output)
     else:
-        st.warning("Gemini not configured for testing. Please provide API key.")
+        st.warning("Gemini not configured. Please provide API key to run tests.")
+
 # end of modules/llm_processor.py
