@@ -226,7 +226,7 @@ and providing functionalities such as:
 - Extracting specific information based on user queries and providing relevancy scores.
 - Generating consolidated overviews from multiple text snippets (either general or
   focused on a specific query from high-relevance items).
-- Generating alternative search queries based on initial keywords and user goals.
+- Generating alternative search queries based on initial keywords and user goals (Q1 and Q2).
 
 It incorporates caching for LLM responses to optimize performance and reduce API costs,
 and includes retry mechanisms for API calls. All LLM outputs requiring direct display
@@ -401,29 +401,31 @@ Returns:
         "LLM_PROCESSOR_INFO: No suitable content found...").
 ```
 
-### def generate_search_queries(original_keywords: Tuple[str, ...], specific_info_query: Optional[str], num_queries_to_generate: int, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 2000) -> Optional[List[str]]
+### def generate_search_queries(original_keywords: Tuple[str, ...], specific_info_query: Optional[str], specific_info_query_2: Optional[str], num_queries_to_generate: int, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 2500) -> Optional[List[str]]
 Docstring:
 ```text
-Generates a list of new search queries based on original keywords and an optional specific goal.
+Generates new search queries based on original keywords and specific information goals (Q1 and Q2).
 
-The LLM is prompted to create diverse search queries, considering synonyms, related
-concepts, and different angles, aiming to improve search effectiveness.
+The LLM is prompted to create diverse search queries by considering the original
+keywords, a primary information goal (Q1), and a secondary information goal (Q2).
+It aims to generate queries that holistically address the user's intent,
+exploring intersections, synonyms, and related concepts.
 Results are cached.
 
 Args:
-    original_keywords: Tuple[str, ...]: A tuple of initial keywords provided by the user.
-    specific_info_query: Optional[str]: An optional specific information goal from the
-        user, which can help tailor the generated queries.
+    original_keywords: Tuple[str, ...]: Initial keywords from the user.
+    specific_info_query: Optional[str]: The primary specific information goal (Main Query 1).
+    specific_info_query_2: Optional[str]: The secondary specific information goal (Main Query 2).
     num_queries_to_generate: int: The exact number of new search queries to generate.
     api_key: Optional[str]: The Google Gemini API key.
     model_name: str: The Gemini model to use.
-    max_input_chars: int: Maximum characters of the context (keywords + goal) to pass to LLM.
+    max_input_chars: int: Max characters of the context (keywords + Q1 + Q2) for the LLM.
 
 Returns:
-    Optional[List[str]]: A list of generated search query strings. Returns None if
-        generation fails or an error occurs (e.g., Gemini not configured, LLM error).
-        Returns an empty list if `num_queries_to_generate` is zero or less.
-        Queries are stripped of leading/trailing quotes.
+    Optional[List[str]]: A list of generated search query strings. Returns None
+        if generation fails (e.g., Gemini not configured, LLM error). Returns an
+        empty list if `num_queries_to_generate` is zero or less. Queries are
+        stripped of leading/trailing quotes.
 ```
 
 ---
