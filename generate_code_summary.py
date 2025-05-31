@@ -1,8 +1,9 @@
 # generate_code_summary.py
-# Version 1.2:
-# - Changed "None" output for missing docstrings to "[No docstring provided]" for clarity.
-# - Assumes script is run from the project root, using os.getcwd() for project_root_dir.
-# - Added more specific type hints for ast nodes where appropriate.
+# Version 1.3:
+# - Modified to include the FULL docstring for modules, classes, and functions.
+# - Docstrings are now formatted within Markdown code blocks (```text ... ```).
+# - Removed MAX_DOCSTRING_SUMMARY_LENGTH and first-line summarization logic.
+# - Retains other logic from v1.2 (path handling, type hint formatting, etc.).
 
 """
 A Python script to analyze a given set of Python files and directories,
@@ -10,14 +11,14 @@ extracting information about modules, classes, and functions.
 
 This script uses Python's `ast` (Abstract Syntax Tree) module to parse
 source code without executing it. It extracts:
-- Module-level docstrings.
-- Class definitions including their names, base classes, and docstrings.
+- Full module-level docstrings.
+- Class definitions including their names, base classes, and full docstrings.
 - Function and method definitions including their names, parameters (with type hints
-  and basic default value representation), return type hints, and docstrings.
+  and basic default value representation), return type hints, and full docstrings.
 
 The output is formatted as Markdown and saved to a specified file (default: codebase_summary.md),
 which can then be used as context for Large Language Models (LLMs) or for human
-developers to quickly understand the codebase structure.
+developers to understand the codebase structure in detail.
 """
 
 import ast
@@ -25,17 +26,17 @@ import os
 from typing import List, Tuple, Optional, Any, Union
 
 # --- Configuration ---
-OUTPUT_FILENAME: str = "codebase_summary.md" # Relative to project root
-PATHS_TO_ANALYZE: List[str] = [ # Relative to the project root
+OUTPUT_FILENAME: str = "codebase_summary.md" 
+PATHS_TO_ANALYZE: List[str] = [ 
     "app.py",
     "modules"
 ]
 EXCLUDE_FILES: List[str] = ["__init__.py", "generate_code_summary.py"]
-MAX_DOCSTRING_SUMMARY_LENGTH: int = 120 
+# MAX_DOCSTRING_SUMMARY_LENGTH removed
 
-# --- Helper Functions ---
+# --- Helper Functions (format_type_hint, extract_arg_info, get_default_value_str remain the same as v1.2) ---
 
-def format_type_hint(node: Optional[ast.expr]) -> str: # ast.expr is a base for many annotation types
+def format_type_hint(node: Optional[ast.expr]) -> str:
     """
     Attempts to reconstruct a type hint string from an AST annotation node.
     Handles simple names, attributes, subscripted generics, and basic union types.
@@ -65,18 +66,18 @@ def format_type_hint(node: Optional[ast.expr]) -> str: # ast.expr is a base for 
         slice_val_str: str
         if isinstance(node.slice, ast.Tuple): 
             slice_val_str = ", ".join(format_type_hint(elt) for elt in node.slice.elts)
-        elif isinstance(node.slice, (ast.Name, ast.Constant, ast.Subscript, ast.Attribute, ast.BinOp)): # Python 3.8 slice can be Name or Constant
+        elif isinstance(node.slice, (ast.Name, ast.Constant, ast.Subscript, ast.Attribute, ast.BinOp)):
              slice_val_str = format_type_hint(node.slice)
-        elif hasattr(node.slice, 'value') and isinstance(node.slice.value, (ast.Name, ast.Constant, ast.Subscript, ast.Attribute, ast.BinOp)): # For Python < 3.9 index wrapper
+        elif hasattr(node.slice, 'value') and isinstance(node.slice.value, (ast.Name, ast.Constant, ast.Subscript, ast.Attribute, ast.BinOp)): 
             slice_val_str = format_type_hint(node.slice.value)
         else:
-            slice_val_str = "..." # Placeholder for very complex slices not easily parsed
+            slice_val_str = "..." 
         return f"{value_str}[{slice_val_str}]"
     elif isinstance(node, ast.Constant) and node.value is None:
         return "None"
-    elif isinstance(node, ast.NameConstant) and node.value is None: # Python < 3.8
+    elif isinstance(node, ast.NameConstant) and node.value is None: 
         return "None"
-    elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr): # Python 3.10+ Union
+    elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr): 
         left = format_type_hint(node.left)
         right = format_type_hint(node.right)
         return f"{left} | {right}"
@@ -112,21 +113,21 @@ def get_default_value_str(default_node: Optional[ast.expr]) -> str:
             return f" = {ast.unparse(default_node)}"
         except Exception:
             return " = <complex_default>"
-    elif isinstance(default_node, ast.Constant): # Handles str, int, float, bool, None in Py 3.8+
+    elif isinstance(default_node, ast.Constant):
         return f" = {default_node.value!r}" 
-    elif isinstance(default_node, ast.NameConstant): # For None, True, False in Python < 3.8
+    elif isinstance(default_node, ast.NameConstant): 
         return f" = {default_node.value}"
-    elif isinstance(default_node, ast.Num): # Deprecated in 3.8, but for <3.8
+    elif isinstance(default_node, ast.Num): 
          return f" = {default_node.n!r}"
-    elif isinstance(default_node, ast.Str): # Deprecated in 3.8
+    elif isinstance(default_node, ast.Str): 
          return f" = {default_node.s!r}"
     else:
         return " = <default_value>"
 
-
 def analyze_python_file(filepath: str, project_root_dir: str) -> List[str]:
     """
-    Analyzes a single Python file to extract module, class, and function details.
+    Analyzes a single Python file to extract module, class, and function details
+    including their full docstrings.
 
     Args:
         filepath: The absolute path to the Python file to analyze.
@@ -148,13 +149,11 @@ def analyze_python_file(filepath: str, project_root_dir: str) -> List[str]:
     output_lines.append(f"## File: {relative_filepath}")
 
     module_docstring: Optional[str] = ast.get_docstring(tree, clean=True)
+    output_lines.append("Module Docstring:")
     if module_docstring:
-        first_line_module_doc: str = module_docstring.splitlines()[0]
-        summary_doc: str = first_line_module_doc[:MAX_DOCSTRING_SUMMARY_LENGTH]
-        if len(first_line_module_doc) > MAX_DOCSTRING_SUMMARY_LENGTH: summary_doc += "..."
-        output_lines.append(f"Module Docstring: {summary_doc}\n")
+        output_lines.append(f"```text\n{module_docstring.strip()}\n```\n")
     else:
-        output_lines.append("Module Docstring: [No docstring provided]\n")
+        output_lines.append("[No docstring provided]\n")
 
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -182,13 +181,11 @@ def analyze_python_file(filepath: str, project_root_dir: str) -> List[str]:
             output_lines.append(f"### {func_type_prefix} {func_name}({args_str}){return_hint_str}")
             
             docstring: Optional[str] = ast.get_docstring(node, clean=True)
+            output_lines.append("Docstring:")
             if docstring:
-                first_line_doc: str = docstring.splitlines()[0]
-                summary_doc: str = first_line_doc[:MAX_DOCSTRING_SUMMARY_LENGTH]
-                if len(first_line_doc) > MAX_DOCSTRING_SUMMARY_LENGTH: summary_doc += "..."
-                output_lines.append(f"Docstring: {summary_doc}")
+                output_lines.append(f"```text\n{docstring.strip()}\n```")
             else:
-                output_lines.append("Docstring: [No docstring provided]")
+                output_lines.append("[No docstring provided]")
             output_lines.append("")
 
         elif isinstance(node, ast.ClassDef):
@@ -200,13 +197,11 @@ def analyze_python_file(filepath: str, project_root_dir: str) -> List[str]:
             output_lines.append(f"### class {class_name}{base_classes_str}")
             
             class_docstring: Optional[str] = ast.get_docstring(node, clean=True)
+            output_lines.append("Docstring:")
             if class_docstring:
-                first_line_class_doc: str = class_docstring.splitlines()[0]
-                summary_doc: str = first_line_class_doc[:MAX_DOCSTRING_SUMMARY_LENGTH]
-                if len(first_line_class_doc) > MAX_DOCSTRING_SUMMARY_LENGTH: summary_doc += "..."
-                output_lines.append(f"Docstring: {summary_doc}")
+                output_lines.append(f"```text\n{class_docstring.strip()}\n```")
             else:
-                output_lines.append("Docstring: [No docstring provided]")
+                output_lines.append("[No docstring provided]")
 
             for class_node_item in node.body:
                 if isinstance(class_node_item, (ast.FunctionDef, ast.AsyncFunctionDef)): # Methods
@@ -236,14 +231,12 @@ def analyze_python_file(filepath: str, project_root_dir: str) -> List[str]:
                     output_lines.append(f"  #### {method_type_prefix} {method_name}({method_args_str}){method_return_hint_str}")
                     
                     method_docstring: Optional[str] = ast.get_docstring(class_node_item, clean=True)
+                    output_lines.append(f"  Docstring:") # Added for methods
                     if method_docstring:
-                        first_line_method_doc: str = method_docstring.splitlines()[0]
-                        summary_doc: str = first_line_method_doc[:MAX_DOCSTRING_SUMMARY_LENGTH]
-                        if len(first_line_method_doc) > MAX_DOCSTRING_SUMMARY_LENGTH: summary_doc += "..."
-                        output_lines.append(f"  Docstring: {summary_doc}")
+                        output_lines.append(f"  ```text\n  {method_docstring.strip().replace(chr(10), chr(10) + '  ')}\n  ```") # Indent multiline method docstrings
                     else:
-                        output_lines.append("  Docstring: [No docstring provided]")
-            output_lines.append("")
+                        output_lines.append("  [No docstring provided]")
+            output_lines.append("") # Extra newline after class methods processed
     
     output_lines.append("---\n") 
     return output_lines
@@ -251,9 +244,9 @@ def analyze_python_file(filepath: str, project_root_dir: str) -> List[str]:
 def main() -> None:
     """
     Main execution function for the script.
-    Identifies Python files and generates a Markdown summary.
+    Identifies Python files and generates a Markdown summary including full docstrings.
     """
-    project_root_dir: str = os.getcwd() # Assumes script is run from the project root
+    project_root_dir: str = os.getcwd() 
     
     all_summary_lines: List[str] = [f"# Codebase Summary (v{SCRIPT_VERSION})\n"]
 
@@ -286,7 +279,7 @@ def main() -> None:
         for line in all_summary_lines:
             print(line)
 
-SCRIPT_VERSION: str = "1.2" # Version of this analysis script
+SCRIPT_VERSION: str = "1.3" 
 
 if __name__ == "__main__":
     print(f"Running Codebase Summary Generator v{SCRIPT_VERSION}...")
