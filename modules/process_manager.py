@@ -1,12 +1,9 @@
 # modules/process_manager.py
-# Version 1.2.8:
-# - Refined consolidated summary fallback: If a focused summary was attempted
-#   with high-scoring Q1 items but the LLM processor indicated it couldn't
-#   use them (triggering info_message_for_ui), the subsequent "general overview"
-#   attempt will now re-use those collected high-scoring Q1 items as input,
-#   rather than only using general item summaries. This ensures high-quality
-#   Q1 content isn't lost if the initial focused LLM call is problematic.
-# - Retains progress bar fix from v1.2.6.
+# Version 1.3.1:
+# - Adjusted the LLM_PROCESSOR_INFO message when falling back to a general
+#   overview (due to no Q1 items meeting score >=3) to start with
+#   "LLM_PROCESSOR_INFO: General overview as follows..." and include context.
+# - Retains stricter focused/general logic from v1.3.0 and progress bar fix.
 """
 Handles the main workflow of searching, scraping, LLM processing, and data aggregation.
 """
@@ -90,6 +87,7 @@ def run_search_and_analysis(
         with progress_bar_placeholder.container(): 
             st.progress(min(max(progress_value, 0.0), 1.0), text=progress_text)
 
+    # --- Item Processing Loop ---
     for keyword_val in keywords_list_val_runtime: 
         processing_log.append(f"\n🔎 Processing keyword: {keyword_val}")
         if not (app_config.google_search.api_key and app_config.google_search.cse_id):
@@ -216,136 +214,104 @@ def run_search_and_analysis(
     elif len(initial_keywords_list) == 1: topic_for_consolidation_for_batch = initial_keywords_list[0]
     else: topic_for_consolidation_for_batch = f"topics: {', '.join(initial_keywords_list[:3])}{'...' if len(initial_keywords_list) > 3 else ''}"
 
+    # --- CONSOLIDATED SUMMARY LOGIC (Version 1.3.1) ---
     if results_data and llm_key_available:
         processing_log.append(f"\n✨ Generating consolidated overview...")
         with st.spinner("Generating consolidated overview..."):
-            focused_texts_for_consolidation: List[str] = []
-            info_message_for_ui: str = ""
-            focused_summary_llm_output: Optional[str] = None
-
-            # 1. Attempt to collect items for Focused Consolidation
+            texts_for_focused_q1_summary: List[str] = []
+            
             if primary_llm_extract_query:
-                processing_log.append(f"  Attempting to collect items for focused consolidation based on Main Query 1: '{primary_llm_extract_query}'")
                 for item in results_data:
                     extraction_text_q1 = item.get("llm_extracted_info_q1")
                     if not extraction_text_q1: continue
-
                     item_relevancy_score_q1 = _parse_score_from_extraction(extraction_text_q1)
                     if item_relevancy_score_q1 is not None and item_relevancy_score_q1 >= 3:
-                        content_after_score = ""
-                        if extraction_text_q1.startswith("Relevancy Score:"): 
-                            parts = extraction_text_q1.split('\n', 1)
-                            if len(parts) > 1:
-                                content_after_score = parts[1].strip()
-                        
-                        is_content_valid = content_after_score and \
-                                           not str(content_after_score).lower().startswith(("llm error", "no text content", "llm_processor:"))
-                        
-                        if is_content_valid:
-                            focused_texts_for_consolidation.append(content_after_score)
-                
-                if focused_texts_for_consolidation: # If we found items for focused summary
-                    processing_log.append(f"  Found {len(focused_texts_for_consolidation)} items meeting Main Query 1 (score >=3) criteria for focused summary.")
-                    llm_api_key_to_use_consol: Optional[str] = app_config.llm.google_gemini_api_key if app_config.llm.provider == "google" else app_config.llm.openai_api_key
-                    llm_model_to_use_consol: str = app_config.llm.google_gemini_model if app_config.llm.provider == "google" else app_config.llm.openai_model_summarize
-                    
-                    focused_summary_llm_output = llm_processor.generate_consolidated_summary(
-                        summaries=tuple(focused_texts_for_consolidation),
-                        topic_context=topic_for_consolidation_for_batch,
-                        api_key=llm_api_key_to_use_consol, model_name=llm_model_to_use_consol,
-                        max_input_chars=app_config.llm.max_input_chars,
-                        extraction_query_for_consolidation=primary_llm_extract_query
-                    )
-                    
-                    problematic_llm_responses = [
-                        "llm_processor: no items met score >=3 for query", 
-                        "llm_processor_error: no items met score >=3",
-                        "could not generate summary from the provided texts",
-                        "no suitable content provided for focused summary" ,
-                        "no items met score" 
-                    ]
-                    is_problematic_response = False
-                    if focused_summary_llm_output:
-                        for resp_text in problematic_llm_responses:
-                            if resp_text in focused_summary_llm_output.lower():
-                                is_problematic_response = True
-                                break
-                    
-                    if is_problematic_response: # LLM indicated it couldn't use the focused items
-                        processing_log.append(f"  ⚠️ LLM indicated no suitable items for focused summary (returned: '{str(focused_summary_llm_output)[:100]}...') despite {len(focused_texts_for_consolidation)} high-scoring items. Will attempt general overview using these Q1 items.")
-                        info_message_for_ui = (
-                            f"LLM_PROCESSOR_INFO: LLM could not generate a focused summary from items matching '{primary_llm_extract_query}' (score >=3). "
-                            "Attempting general overview using the high-scoring Q1 items instead."
-                        )
-                        consolidated_summary_text_for_batch = None # Trigger fallback path, but focused_texts_for_consolidation is still populated
-                    elif focused_summary_llm_output and not str(focused_summary_llm_output).lower().startswith("llm_processor"):
-                        consolidated_summary_text_for_batch = focused_summary_llm_output # Successful focused summary
-                    else: # Other LLM failure for focused summary
-                        processing_log.append(f"  Focused summary LLM call failed or returned empty/error. Will attempt general overview. LLM output: {str(focused_summary_llm_output)[:150]}")
-                        info_message_for_ui = (
-                            f"LLM_PROCESSOR_INFO: Focused summary generation for '{primary_llm_extract_query}' failed or returned an error. Attempting general overview."
-                        )
-                        # If focused_texts_for_consolidation is populated, it will be used in the fallback.
-                        # If it's not, then general summaries will be collected.
-                        consolidated_summary_text_for_batch = None 
-                else: # No items met >=3 criteria initially for focused summary
-                    processing_log.append(f"  ⚠️ No items met >=3 relevancy with valid content for Main Query 1 ('{primary_llm_extract_query}'). Will attempt general consolidation using item summaries.")
-                    info_message_for_ui = (
-                        f"LLM_PROCESSOR_INFO: No items met score >=3 with valid content for Main Query 1 ('{primary_llm_extract_query}'). "
-                        "Attempting general overview from item summaries."
-                    )
-                    consolidated_summary_text_for_batch = None 
-            else: # No primary_llm_extract_query, so go directly to general summary path
-                processing_log.append(f"  No Main Query 1 provided. Attempting general consolidation using item summaries.")
-                consolidated_summary_text_for_batch = None 
+                        texts_for_focused_q1_summary.append(extraction_text_q1) 
 
-            # 2. Attempt General Consolidation if no successful focused summary yet
-            if consolidated_summary_text_for_batch is None:
-                texts_to_use_for_general_fallback: List[str] = []
+            if texts_for_focused_q1_summary: # Branch 1: At least one Q1 item scored >= 3
+                processing_log.append(f"  Attempting FOCUSED consolidated summary using {len(texts_for_focused_q1_summary)} high-scoring Q1 item(s) for query: '{primary_llm_extract_query}'.")
+                llm_api_key_to_use_consol: Optional[str] = app_config.llm.google_gemini_api_key if app_config.llm.provider == "google" else app_config.llm.openai_api_key
+                llm_model_to_use_consol: str = app_config.llm.google_gemini_model if app_config.llm.provider == "google" else app_config.llm.openai_model_summarize
                 
-                # If a focused attempt was made (info_message_for_ui is set) AND we have focused_texts collected, use them.
-                if primary_llm_extract_query and focused_texts_for_consolidation and info_message_for_ui:
-                    processing_log.append(f"  Re-using {len(focused_texts_for_consolidation)} collected high-score Q1 extractions for the general overview fallback because focused LLM call was problematic.")
-                    texts_to_use_for_general_fallback = list(focused_texts_for_consolidation)
-                else: # Collect general item summaries
-                    processing_log.append("  Collecting general item summaries for consolidated overview.")
-                    for item in results_data:
-                        summary_text = item.get("llm_summary")
-                        is_summary_valid = summary_text and not str(summary_text).lower().startswith(("llm error", "no text content", "llm_processor:"))
-                        if is_summary_valid and summary_text.strip():
-                            texts_to_use_for_general_fallback.append(summary_text)
+                generated_focused_summary = llm_processor.generate_consolidated_summary(
+                    summaries=tuple(texts_for_focused_q1_summary),
+                    topic_context=topic_for_consolidation_for_batch,
+                    api_key=llm_api_key_to_use_consol, model_name=llm_model_to_use_consol,
+                    max_input_chars=app_config.llm.max_input_chars,
+                    extraction_query_for_consolidation=primary_llm_extract_query
+                )
                 
-                if texts_to_use_for_general_fallback:
-                    processing_log.append(f"  Generating general overview from {len(texts_to_use_for_general_fallback)} texts.")
+                is_llm_call_problematic = False
+                if not generated_focused_summary: is_llm_call_problematic = True
+                else:
+                    problematic_substrings = ["llm_processor", "could not generate", "no items met score", "no suitable content"]
+                    for sub in problematic_substrings:
+                        if sub in str(generated_focused_summary).lower():
+                            is_llm_call_problematic = True
+                            break
+                
+                if is_llm_call_problematic:
+                    processing_log.append(f"  ❌ LLM failed to generate a FOCUSED summary from the {len(texts_for_focused_q1_summary)} provided high-scoring Q1 item(s). LLM Output (first 100 chars): {str(generated_focused_summary)[:100]}")
+                    consolidated_summary_text_for_batch = (
+                        f"LLM_PROCESSOR_ERROR: The LLM failed to generate a focused consolidated summary based on "
+                        f"{len(texts_for_focused_q1_summary)} item(s) that met the criteria (score >=3) for query '{primary_llm_extract_query}'. "
+                        f"The LLM processor reported: \"{str(generated_focused_summary)[:100]}...\""
+                    )
+                else:
+                    consolidated_summary_text_for_batch = generated_focused_summary
+                    processing_log.append(f"  ✔️ Successfully generated FOCUSED consolidated summary from Q1 items.")
+
+            else: # Branch 2: NO Q1 items scored >= 3 (or no primary_llm_extract_query)
+                general_overview_message_start = "LLM_PROCESSOR_INFO: General overview as follows ("
+                if primary_llm_extract_query:
+                    general_overview_message_start += f"no items met Q1 score >=3 criteria for query '{primary_llm_extract_query}'"
+                else:
+                    general_overview_message_start += "no specific query was provided for focused summary"
+                general_overview_message_start += ")."
+                processing_log.append(f"  {general_overview_message_start} Attempting general overview from item summaries.")
+
+                general_texts_for_consolidation: List[str] = []
+                for item in results_data:
+                    summary_text = item.get("llm_summary")
+                    is_summary_valid = summary_text and not str(summary_text).lower().startswith(("llm error", "no text content", "llm_processor:"))
+                    if is_summary_valid and summary_text.strip():
+                        general_texts_for_consolidation.append(summary_text)
+                
+                if general_texts_for_consolidation:
+                    processing_log.append(f"  Attempting GENERAL consolidated overview using {len(general_texts_for_consolidation)} item summaries.")
                     llm_api_key_to_use_consol: Optional[str] = app_config.llm.google_gemini_api_key if app_config.llm.provider == "google" else app_config.llm.openai_api_key
                     llm_model_to_use_consol: str = app_config.llm.google_gemini_model if app_config.llm.provider == "google" else app_config.llm.openai_model_summarize
                     
-                    general_overview_from_llm = llm_processor.generate_consolidated_summary(
-                        summaries=tuple(texts_to_use_for_general_fallback),
+                    generated_general_overview = llm_processor.generate_consolidated_summary(
+                        summaries=tuple(general_texts_for_consolidation),
                         topic_context=topic_for_consolidation_for_batch,
                         api_key=llm_api_key_to_use_consol, model_name=llm_model_to_use_consol,
                         max_input_chars=app_config.llm.max_input_chars,
-                        extraction_query_for_consolidation=None # Explicitly general
+                        extraction_query_for_consolidation=None 
                     )
-                    if info_message_for_ui: 
-                        consolidated_summary_text_for_batch = info_message_for_ui + "\n\n--- General Overview ---\n" + (general_overview_from_llm or "LLM could not generate general overview from available texts.")
-                    else: 
-                        consolidated_summary_text_for_batch = general_overview_from_llm if general_overview_from_llm else "LLM_PROCESSOR_ERROR: Could not generate a general consolidated overview from available item summaries."
-                else: # No texts found for general fallback either
-                    if info_message_for_ui : 
-                         consolidated_summary_text_for_batch = info_message_for_ui + "\n\n--- General Overview ---\nAdditionally, no suitable texts (neither Q1 extractions nor general summaries) were available for this fallback."
-                    else: 
-                        consolidated_summary_text_for_batch = "LLM_PROCESSOR_ERROR: No valid content (neither focused extractions nor general summaries) found to generate a consolidated overview."
-            
-            if consolidated_summary_text_for_batch:
-                 processing_log.append(f"  Final Consolidated Overview (first 150 chars): {str(consolidated_summary_text_for_batch)[:150]}...")
-            else: 
-                 consolidated_summary_text_for_batch = "LLM_PROCESSOR_ERROR: Failed to generate any consolidated overview."
-                 processing_log.append(f"  ❌ {consolidated_summary_text_for_batch}")
-        with progress_bar_placeholder.container(): st.empty()
+                    
+                    if generated_general_overview and not str(generated_general_overview).lower().startswith("llm_processor"):
+                        consolidated_summary_text_for_batch = general_overview_message_start + "\n\n--- General Overview ---\n" + generated_general_overview
+                        processing_log.append("  ✔️ Successfully generated GENERAL consolidated overview.")
+                    else:
+                        processing_log.append(f"  ❌ LLM failed to generate a GENERAL overview from item summaries. LLM Output: {str(generated_general_overview)[:150]}")
+                        consolidated_summary_text_for_batch = general_overview_message_start + "\n\n--- General Overview ---\nLLM_PROCESSOR_ERROR: The LLM failed to generate a general consolidated overview from the available item summaries."
+                else: 
+                    no_summaries_message_suffix = " Additionally, no valid general item summaries were found to generate a general overview."
+                    processing_log.append(f"  ❌ {general_overview_message_start.replace(').', ')')}{no_summaries_message_suffix}") # Log modified message
+                    consolidated_summary_text_for_batch = general_overview_message_start.replace("Attempting general overview from item summaries.", "No valid general item summaries were available.")
+        
+        with progress_bar_placeholder.container(): st.empty() 
+    
+    elif not results_data and llm_key_available: 
+        consolidated_summary_text_for_batch = "LLM_PROCESSOR_INFO: No result items were successfully scraped and processed to create a consolidated summary."
+        processing_log.append(f"\nℹ️ {consolidated_summary_text_for_batch}")
+    elif not llm_key_available: 
+        consolidated_summary_text_for_batch = "LLM_PROCESSOR_INFO: LLM processing is not configured. Consolidated summary cannot be generated."
+        processing_log.append(f"\nℹ️ {consolidated_summary_text_for_batch}")
 
     if sheet_writing_enabled and gs_worksheet: 
-        if results_data or consolidated_summary_text_for_batch:
+        if results_data or consolidated_summary_text_for_batch: 
             batch_process_timestamp_for_sheet: str = time.strftime("%Y-%m-%d %H:%M:%S")
             processing_log.append(f"\n💾 Writing batch data to Google Sheets...")
             active_extraction_queries_for_sheet = [q for q in llm_extract_queries_input if q.strip()]
