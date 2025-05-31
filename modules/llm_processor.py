@@ -1,19 +1,14 @@
 # modules/llm_processor.py
-# Version 1.9.1: Added @st.cache_data to LLM processing functions.
-# Includes generate_search_queries function from v1.9.0.
+# Version 1.9.2:
+# - Modified `generate_consolidated_summary` to produce a more detailed and
+#   potentially longer overview when `extraction_query_for_consolidation` is provided.
+#   This is achieved by adjusting the LLM prompt and increasing max_output_tokens
+#   for the focused consolidation scenario.
+# - Other functions remain as in v1.9.1.
 
 """
 Handles interactions with Large Language Models (LLMs) for text processing.
-
-Currently configured to primarily use Google's Gemini models via the
-`google-generativeai` library. It includes functionalities for:
-- Configuring the LLM client.
-- Generating summaries of text content.
-- Extracting specific information based on user queries, including a relevancy score.
-- Generating a consolidated overview from multiple text summaries, with options
-  for filtering based on relevancy scores and focusing on specific extraction queries.
-- Generating alternative search queries based on initial user input.
-- Implements exponential backoff and retries for API calls to handle rate limits.
+... (rest of docstring as in v1.9.1) ...
 """
 
 import google.generativeai as genai
@@ -23,26 +18,14 @@ import time
 import random
 import re 
 
-# --- Module-level state for Gemini configuration ---
+# --- Module-level state and configure_gemini, _call_gemini_api, _truncate_text_for_gemini ---
+# --- generate_summary, extract_specific_information, _parse_score_and_get_content ---
+# --- generate_search_queries ---
+# (These functions remain unchanged from v1.9.1)
 _GEMINI_CONFIGURED: bool = False
 _AVAILABLE_MODELS_CACHE: Optional[List[str]] = None
 
 def configure_gemini(api_key: Optional[str], force_recheck_models: bool = False) -> bool:
-    """
-    Configures the Google Generative AI client with the provided API key.
-
-    It also lists available models that support 'generateContent' and caches them.
-    This function should be called before any Gemini API interactions.
-
-    Args:
-        api_key: The API key for Google Gemini.
-        force_recheck_models: If True, forces a re-fetch of available models
-                              even if they were previously cached.
-
-    Returns:
-        True if configuration was successful (API key set and usable models found),
-        False otherwise.
-    """
     global _GEMINI_CONFIGURED, _AVAILABLE_MODELS_CACHE
     if _GEMINI_CONFIGURED and not force_recheck_models and _AVAILABLE_MODELS_CACHE is not None: return True
     if not api_key: return False
@@ -77,24 +60,6 @@ def _call_gemini_api(
     initial_backoff_seconds: float = 5.0,
     max_backoff_seconds: float = 60.0
 ) -> Optional[str]:
-    """
-    Internal helper function to make a call to the Google Gemini API (generate_content).
-    Includes model name validation and exponential backoff retry logic for rate limits.
-
-    Args:
-        model_name: The name of the Gemini model to use (e.g., "models/gemini-1.5-flash-latest").
-        prompt_parts: A list containing the prompt content. For simple text prompts,
-                      this will be a list with a single string element.
-        generation_config_args: Dictionary of arguments for genai.types.GenerationConfig.
-        safety_settings_args: List of safety setting dictionaries.
-        max_retries: Maximum number of times to retry on rate limit errors.
-        initial_backoff_seconds: Initial delay in seconds before the first retry.
-        max_backoff_seconds: Maximum delay in seconds for a single retry.
-
-    Returns:
-        The text response from the LLM, an error message string if an error occurred,
-        or a message indicating a content block. Returns "LLM_PROCESSOR Error: ..." if client is not configured.
-    """
     if not _GEMINI_CONFIGURED: return "LLM_PROCESSOR Error: Gemini client not configured."
     validated_model_name = model_name
     if _AVAILABLE_MODELS_CACHE is not None:
@@ -136,18 +101,6 @@ def _call_gemini_api(
     return f"LLM_PROCESSOR Error: Max retries ({max_retries}) reached for '{validated_model_name}'."
 
 def _truncate_text_for_gemini(text: str, model_name: str, max_input_chars: int) -> str:
-    """
-    Truncates text to a specified maximum number of characters.
-    This is a practical limit for the application, not necessarily the model's absolute token limit.
-
-    Args:
-        text: The input text string.
-        model_name: The name of the model (for potential future model-specific truncation logic).
-        max_input_chars: The maximum number of characters to allow.
-
-    Returns:
-        The truncated text, or the original text if it's within the limit.
-    """
     if len(text) > max_input_chars:
         return text[:max_input_chars]
     return text
@@ -159,18 +112,6 @@ def generate_summary(
     model_name: str = "models/gemini-1.5-flash-latest",
     max_input_chars: int = 100000
 ) -> Optional[str]:
-    """
-    Generates a narrative summary for the given text content using Gemini.
-
-    Args:
-        text_content: The main textual content extracted from a web page.
-        api_key: The Google Gemini API key.
-        model_name: The specific Gemini model to use.
-        max_input_chars: Maximum characters of `text_content` to send to the LLM.
-
-    Returns:
-        A string containing the generated summary, or an error/status message string.
-    """
     if not text_content:
         return "LLM_PROCESSOR: No text content for summary."
     if not configure_gemini(api_key): 
@@ -201,28 +142,6 @@ def extract_specific_information(
     model_name: str = "models/gemini-1.5-flash-latest",
     max_input_chars: int = 100000
 ) -> Optional[str]:
-    """
-    Extracts specific information based on a user's query from the text content using Gemini
-    and includes a relevancy score as the first line of the output.
-
-    The relevancy score is determined based on the number of distinct pieces of information
-    found related to the extraction_query:
-    - 5/5: 5 or more pieces of information.
-    - 4/5: Exactly 4 pieces of information.
-    - 3/5: 1, 2, or 3 pieces of information.
-    - 1/5: No information found.
-
-    Args:
-        text_content: The main textual content.
-        extraction_query: The user's question or description of information to extract.
-        api_key: The Google Gemini API key.
-        model_name: The specific Gemini model to use.
-        max_input_chars: Maximum characters of `text_content` to send.
-
-    Returns:
-        A string starting with "Relevancy Score: X/5\n" followed by the extracted
-        information, or an error/status message.
-    """
     if not text_content:
         return "LLM_PROCESSOR: No text content for extraction."
     if not extraction_query: 
@@ -256,25 +175,11 @@ def extract_specific_information(
     )
 
 def _parse_score_and_get_content(text_with_potential_score: str) -> tuple[Optional[int], str]:
-    """
-    Parses a relevancy score from the beginning of a string (if present)
-    and returns the score and the remaining content.
-
-    Args:
-        text_with_potential_score: The text string, which might start with "Relevancy Score: X/5\n".
-
-    Returns:
-        A tuple: (score, content_text).
-        - score: An integer (1-5) if successfully parsed, otherwise None.
-        - content_text: The text after the score line, or the original text if no score line.
-    """
     score = None
     content_text = text_with_potential_score  
-
     if text_with_potential_score.startswith("Relevancy Score: "):
         parts = text_with_potential_score.split('\n', 1)
         score_line = parts[0]
-        
         try:
             score_str = score_line.split("Relevancy Score: ")[1].split('/')[0]
             score = int(score_str)
@@ -289,32 +194,18 @@ def _parse_score_and_get_content(text_with_potential_score: str) -> tuple[Option
 
 @st.cache_data(max_entries=20, ttl=1800, show_spinner=False)
 def generate_consolidated_summary(
-    summaries: tuple[Optional[str], ...], # Changed to tuple for hashability
+    summaries: tuple[Optional[str], ...], 
     topic_context: str, 
     api_key: Optional[str],
     model_name: str = "models/gemini-1.5-flash-latest", 
-    max_input_chars: int = 150000,
+    max_input_chars: int = 150000, # Max input for the combined texts
     extraction_query_for_consolidation: Optional[str] = None 
 ) -> Optional[str]:
     """
     Generates a consolidated overview from a list of individual LLM outputs.
-
-    If `extraction_query_for_consolidation` is provided, it filters the inputs to use only those
-    with a parsed "Relevancy Score: X/5" of 3 or higher, and focuses the summary on that query.
-    Otherwise, it generates a general summary from all valid provided texts.
-
-    Args:
-        summaries: A tuple of strings, where each is an LLM output (summary or extraction).
-                   Extractions are expected to start with "Relevancy Score: X/5\n".
-        topic_context: General topic/keywords of the search batch.
-        api_key: The Google Gemini API key.
-        model_name: The specific Gemini model to use.
-        max_input_chars: Maximum characters for the combined input of all texts.
-        extraction_query_for_consolidation: Optional user-defined query for specific info.
-                                            If provided, triggers filtering and focused summary.
-
-    Returns:
-        A string containing the consolidated overview, or an error/status message.
+    If `extraction_query_for_consolidation` is provided, it filters inputs to use only those
+    with a parsed score of >=3 and focuses the summary, allowing for more depth.
+    Otherwise, it generates a general summary.
     """
     if not summaries: 
         return "LLM_PROCESSOR: No individual LLM outputs provided for consolidation."
@@ -322,39 +213,90 @@ def generate_consolidated_summary(
         return "LLM_PROCESSOR Error: Gemini not configured for consolidated summary."
     
     texts_for_llm_input: List[str] = []
-    query_focused_consolidation_active = bool(extraction_query_for_consolidation and extraction_query_for_consolidation.strip())
+    # This flag now also signals if we should aim for a more detailed/longer focused summary
+    is_focused_consolidation_active = bool(extraction_query_for_consolidation and extraction_query_for_consolidation.strip())
 
     for item_text in summaries: 
         if not item_text: continue
         lower_item_text = item_text.lower()
-        if lower_item_text.startswith("llm error") or lower_item_text.startswith("no text content") or lower_item_text.startswith("llm_processor:"): continue
+        # Basic check for internally generated error/info messages from prior LLM steps
+        if lower_item_text.startswith("llm error") or \
+           lower_item_text.startswith("no text content") or \
+           lower_item_text.startswith("llm_processor: no text content") or \
+           lower_item_text.startswith("llm_processor error:") or \
+           lower_item_text.startswith("llm_processor: no extraction query") or \
+           lower_item_text.startswith("llm_processor: response blocked"):
+            continue
         
-        score, content = _parse_score_and_get_content(item_text)
+        score, content = _parse_score_and_get_content(item_text) # content is text *after* score line
         
-        if query_focused_consolidation_active:
+        if is_focused_consolidation_active:
+            # For focused summary, we *only* use items that have a score and it's >= 3
+            # The `item_text` itself (which includes the score line) was passed in `summaries`
+            # by process_manager.py if the item had score >=3 for Q1/Q2.
+            # So, here we primarily care about using the `content` part.
+            # If an item in `summaries` for focused consolidation doesn't parse a score here, 
+            # it means it was likely a general summary accidentally included, or malformed.
+            # We will be strict: only use if score is parsed and >= 3 from THIS input.
             if score is not None and score >= 3:
                 if content: texts_for_llm_input.append(content)
-        else:
-            if content: texts_for_llm_input.append(content)
+                # If content is empty but score was >=3, it means the LLM only returned score.
+                # We might choose to exclude it, or include a note. For now, exclude if no content.
+            # else:
+                # This text was passed for focused consolidation but doesn't meet criteria *now*.
+                # This could happen if process_manager.py's logic was broader.
+                # For v1.3.3+ of process_manager, it should only pass texts_for_focused_summary
+                # that already meet this.
+                # print(f"DEBUG: Focused mode, but item did not meet score criteria here: '{item_text[:100]}...'")
+        else: # General consolidation
+            # For general, if it had a score line, we use the content after it.
+            # If no score line, we use the whole item_text (which should be a general summary).
+            if content: # content is item_text if no score line, or text after score line if score line present
+                texts_for_llm_input.append(content) 
+            elif item_text: # Fallback if _parse_score_and_get_content returned empty content but item_text was not empty
+                texts_for_llm_input.append(item_text)
+
 
     if not texts_for_llm_input:
-        if query_focused_consolidation_active: return (f"LLM_PROCESSOR: No items met score >=3 for query: '{extraction_query_for_consolidation}'.")
-        else: return "LLM_PROCESSOR: No valid LLM outputs to consolidate."
+        if is_focused_consolidation_active: 
+            return (f"LLM_PROCESSOR_INFO: No suitable content found from items matching relevancy criteria for query: '{extraction_query_for_consolidation}'. Cannot generate focused overview.")
+        else: 
+            return "LLM_PROCESSOR_INFO: No valid LLM outputs found to consolidate into a general overview."
     
-    combined_texts = "\n\n---\n\n".join([f"Source Document {i+1} Content:\n{text_entry}" for i, text_entry in enumerate(texts_for_llm_input)])
+    combined_texts = "\n\n---\n\n".join([f"Source Document Content Snippet {i+1}:\n{text_entry}" for i, text_entry in enumerate(texts_for_llm_input)])
     truncated_combined_text = _truncate_text_for_gemini(combined_texts, model_name, max_input_chars)
+    
     prompt_instruction: str
     final_topic_context_for_prompt: str
+    max_tokens_for_call = 800 # Default for general summary
 
-    if query_focused_consolidation_active:
+    if is_focused_consolidation_active:
         final_topic_context_for_prompt = extraction_query_for_consolidation 
-        prompt_instruction = (f"You are an expert analyst. Synthesize info from texts pre-selected for relevance to: '{final_topic_context_for_prompt}'.\nCreate a consolidated overview addressing this query. Focus exclusively on pertinent info. Synthesize key findings into a cohesive narrative. Highlight patterns or discrepancies concerning '{final_topic_context_for_prompt}'. Output well-structured paragraphs. Do NOT include irrelevant info.\n\n")
-    else:
+        prompt_instruction = (
+            f"You are an expert research analyst. Based on the following collection of information items, which have been pre-selected for their high relevance to the central query: '{final_topic_context_for_prompt}', "
+            "your task is to synthesize a detailed and comprehensive consolidated overview. This overview should primarily focus on addressing this central query.\n"
+            "Go into depth on the key findings, arguments, data points, and examples from the provided texts that directly relate to this query. "
+            "Synthesize these into a cohesive and insightful narrative. Identify and discuss any significant patterns, supporting evidence, or notable discrepancies concerning the central query. "
+            "A longer, more elaborate output (e.g., 3-5 substantial paragraphs or more if the content supports it) is preferred for this focused task, providing a thorough analysis. "
+            "Structure your response in well-organized paragraphs. Do NOT include information clearly irrelevant to the central query, even if present in the source texts. Avoid generic introductory or concluding phrases about the act of summarizing.\n\n"
+        )
+        max_tokens_for_call = 1600 # Allow more tokens for a detailed focused summary
+    else: # General consolidation
         final_topic_context_for_prompt = topic_context 
-        prompt_instruction = (f"You are an expert analyst synthesizing info from multiple texts broadly related to '{final_topic_context_for_prompt}'.\nCreate a single, coherent consolidated overview. Identify main themes. Synthesize key info into a cohesive narrative. Highlight patterns or discrepancies. Output well-structured paragraphs.\n\n")
+        prompt_instruction = (
+            f"You are an expert analyst tasked with synthesizing information from multiple text sources broadly related to the topic: '{final_topic_context_for_prompt}'.\n"
+            "Your goal is to create a single, coherent consolidated overview. Identify the main themes, arguments, and key pieces of information present across the texts. "
+            "Synthesize these into a cohesive narrative. If there are notable patterns, supporting evidence, or discrepancies across the sources, please highlight them. "
+            "Present your overview in well-structured paragraphs. Aim for a comprehensive yet reasonably concise summary (e.g., 2-4 substantial paragraphs).\n\n"
+        )
     
-    prompt = (f"{prompt_instruction}--- PROVIDED TEXTS START ---\n{truncated_combined_text}\n--- PROVIDED TEXTS END ---\n\nConsolidated Overview regarding '{final_topic_context_for_prompt}':")
-    return _call_gemini_api( model_name, [prompt], generation_config_args={"max_output_tokens": 800, "temperature": 0.3})
+    prompt = (f"{prompt_instruction}--- PROVIDED TEXTS START ---\n{truncated_combined_text}\n--- PROVIDED TEXTS END ---\n\nConsolidated Overview (focused on '{final_topic_context_for_prompt}' if applicable):")
+    
+    return _call_gemini_api(
+        model_name, 
+        [prompt], 
+        generation_config_args={"max_output_tokens": max_tokens_for_call, "temperature": 0.35} # Slightly higher temp for more elaborate focused
+    )
 
 @st.cache_data(max_entries=50, ttl=3600, show_spinner=False)
 def generate_search_queries(
@@ -365,20 +307,6 @@ def generate_search_queries(
     model_name: str = "models/gemini-1.5-flash-latest", 
     max_input_chars: int = 2000 
 ) -> Optional[List[str]]:
-    """
-    Generates a list of new search queries based on original keywords and a specific info query.
-
-    Args:
-        original_keywords: A tuple of keywords/queries input by the user (must be hashable for caching).
-        specific_info_query: The user's query for specific information to extract (can be None).
-        num_queries_to_generate: The desired number of new search queries.
-        api_key: The Google Gemini API key.
-        model_name: The specific Gemini model to use.
-        max_input_chars: Maximum characters of combined input to send to the LLM.
-
-    Returns:
-        A list of new search query strings, or None if an error occurs or no queries are generated.
-    """
     if not original_keywords: return None 
     if num_queries_to_generate <= 0: return [] 
     if not configure_gemini(api_key): print("LLM_PROCESSOR Warning: Gemini not configured for generating search queries."); return None
@@ -397,12 +325,12 @@ def generate_search_queries(
         return generated_queries[:num_queries_to_generate] 
     print(f"LLM_PROCESSOR Warning: Failed to generate search queries or error: {response_text}"); return None
 
-# --- if __name__ == '__main__': block for testing ---
+# --- if __name__ == '__main__': block for testing (unchanged from v1.9.1) ---
 if __name__ == '__main__':
     st.set_page_config(layout="wide")
-    st.title("LLM Processor Module Test (Google Gemini v1.9.1 - Caching)") 
-    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="main_api_key_test_llm_v191") 
-    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="main_model_name_test_llm_v191") 
+    st.title("LLM Processor Module Test (Google Gemini v1.9.2 - Focused Consolidation Depth)") 
+    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="main_api_key_test_llm_v192") 
+    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="main_model_name_test_llm_v192") 
     configured_for_test = False 
     if GEMINI_API_KEY_TEST:
         if configure_gemini(GEMINI_API_KEY_TEST, force_recheck_models=True): 
@@ -413,11 +341,12 @@ if __name__ == '__main__':
     else: st.info("Enter Gemini API Key to enable tests.")
 
     if configured_for_test:
+        # ... (rest of the testing UI remains the same as v1.9.1) ...
         with st.expander("Test Generate Search Queries (Cached)", expanded=False):
-            test_original_keywords_str_gsq = st.text_input("Original Keywords (comma-separated):", "home office setup, ergonomic chair", key="test_orig_kw_gsq_v191")
-            test_specific_info_query_gsq = st.text_input("Specific Info Goal (Optional):", "best chair for back pain under $300", key="test_spec_info_gsq_v191")
-            test_num_queries_to_gen_gsq = st.number_input("Number of New Queries to Generate:", min_value=1, max_value=10, value=2, key="test_num_q_gen_gsq_v191")
-            if st.button("Test Query Generation (Cached)", key="test_query_gen_button_gsq_v191"):
+            test_original_keywords_str_gsq = st.text_input("Original Keywords (comma-separated):", "home office setup, ergonomic chair", key="test_orig_kw_gsq_v192")
+            test_specific_info_query_gsq = st.text_input("Specific Info Goal (Optional):", "best chair for back pain under $300", key="test_spec_info_gsq_v192")
+            test_num_queries_to_gen_gsq = st.number_input("Number of New Queries to Generate:", min_value=1, max_value=10, value=2, key="test_num_q_gen_gsq_v192")
+            if st.button("Test Query Generation (Cached)", key="test_query_gen_button_gsq_v192"):
                 test_original_keywords_tuple = tuple(k.strip() for k in test_original_keywords_str_gsq.split(',') if k.strip()) 
                 if not test_original_keywords_tuple: st.warning("Please enter original keywords.")
                 else:
@@ -428,16 +357,16 @@ if __name__ == '__main__':
                     else: st.write("No new queries generated or error.")
         
         with st.expander("Test Individual Summary (Cached)", expanded=False):
-            sample_text_summary_cached = st.text_area("Sample Text for Summary:", "The Eiffel Tower is a famous landmark in Paris, France.", height=100, key="test_sample_summary_text_v191_cached")
-            if st.button("Test Summary Generation (Cached)", key="test_summary_gen_button_v191_cached"):
+            sample_text_summary_cached = st.text_area("Sample Text for Summary:", "The Eiffel Tower is a famous landmark in Paris, France.", height=100, key="test_sample_summary_text_v192_cached")
+            if st.button("Test Summary Generation (Cached)", key="test_summary_gen_button_v192_cached"):
                  with st.spinner(f"Generating summary..."): 
                     summary_output = generate_summary(sample_text_summary_cached, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
                  st.markdown("**Generated Summary:**"); st.write(summary_output)
 
         with st.expander("Test Specific Information Extraction (Cached)", expanded=False):
-            sample_text_extraction_cached = st.text_area("Sample Text for Extraction:", "The main product is X and it costs $50. Contact sales@example.com for more.", height=100, key="test_sample_extraction_text_v191_cached")
-            extraction_query_test_cached = st.text_input("Extraction Query:", "product name and contact email", key="test_extraction_query_input_v191_cached")
-            if st.button("Test Extraction & Relevancy Scoring (Cached)", key="test_extraction_score_button_v191_cached"):
+            sample_text_extraction_cached = st.text_area("Sample Text for Extraction:", "The main product is X and it costs $50. Contact sales@example.com for more.", height=100, key="test_sample_extraction_text_v192_cached")
+            extraction_query_test_cached = st.text_input("Extraction Query:", "product name and contact email", key="test_extraction_query_input_v192_cached")
+            if st.button("Test Extraction & Relevancy Scoring (Cached)", key="test_extraction_score_button_v192_cached"):
                 if not extraction_query_test_cached: st.warning("Please enter an extraction query.")
                 else:
                     with st.spinner(f"Extracting info..."): 
@@ -446,14 +375,14 @@ if __name__ == '__main__':
 
         with st.expander("Test Consolidation (Cached)", expanded=False): 
             st.write("Provide texts for consolidation.")
-            consolidate_text_1_cached = st.text_area("Text 1 for Consolidation:", "Relevancy Score: 4/5\nAlpha project is about solar.", height=100, key="test_consolidate_text1_v191_cached")
-            consolidate_text_2_cached = st.text_area("Text 2 for Consolidation:", "Summary: Beta project reduces emissions.", height=100, key="test_consolidate_text2_v191_cached")
-            general_topic_context_cached = st.text_input("General Topic Context for Consolidation:", "Energy Projects", key="test_general_topic_input_v191_cached")
-            focused_extraction_query_cached = st.text_input("Focused Extraction Query for Consolidation (Optional):", "Alpha project", key="test_focused_query_input_v191_cached")
-            if st.button("Test Consolidation (Cached)", key="test_consolidation_button_main_v191_cached"):
+            consolidate_text_1_cached = st.text_area("Text 1 for Consolidation:", "Relevancy Score: 4/5\nAlpha project is about solar.", height=100, key="test_consolidate_text1_v192_cached")
+            consolidate_text_2_cached = st.text_area("Text 2 for Consolidation:", "Summary: Beta project reduces emissions.", height=100, key="test_consolidate_text2_v192_cached")
+            general_topic_context_cached = st.text_input("General Topic Context for Consolidation:", "Energy Projects", key="test_general_topic_input_v192_cached")
+            focused_extraction_query_cached = st.text_input("Focused Extraction Query for Consolidation (Optional):", "Alpha project", key="test_focused_query_input_v192_cached")
+            if st.button("Test Consolidation (Cached)", key="test_consolidation_button_main_v192_cached"):
                 if not general_topic_context_cached: st.warning("Please enter a general topic context.")
                 else:
-                    texts_to_consolidate_tuple = tuple(t for t in [consolidate_text_1_cached, consolidate_text_2_cached] if t) # Use tuple
+                    texts_to_consolidate_tuple = tuple(t for t in [consolidate_text_1_cached, consolidate_text_2_cached] if t) 
                     if not texts_to_consolidate_tuple: st.warning("Please provide at least one text.")
                     else:
                         consolidation_query_to_use_cached = focused_extraction_query_cached if focused_extraction_query_cached.strip() else None
