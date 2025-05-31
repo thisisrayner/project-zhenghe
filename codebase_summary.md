@@ -172,7 +172,8 @@ Configuration management for the Streamlit Keyword Search & Analysis Tool.
 This module defines dataclasses for structuring configuration parameters and
 provides a function to load these configurations primarily from Streamlit
 secrets (`secrets.toml`). It handles settings for Google Search, LLM providers
-(Google Gemini, OpenAI), and Google Sheets integration.
+(Google Gemini, OpenAI), and Google Sheets integration. It also defines
+the application's version.
 ```
 
 ### class GoogleSearchConfig
