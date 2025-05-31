@@ -3,6 +3,7 @@
 # - Enhanced logging for focused consolidated summary: now logs detailed source
 #   information (URL, query type, score) for each item contributing to the summary.
 # - `run_search_and_analysis` now returns a list of these source details for potential UI display.
+# - Corrected NameError for `config.AppConfig` type hint by using string literal.
 # Version 1.3.5:
 # - Updated call to `llm_processor.generate_search_queries` to include Q2.
 """
@@ -11,7 +12,8 @@ Handles the main workflow of searching, scraping, LLM processing, and data aggre
 import streamlit as st
 import time
 import math
-from typing import List, Dict, Any, Optional, Set, Tuple, TypedDict # Added TypedDict
+from typing import List, Dict, Any, Optional, Set, Tuple, TypedDict
+from modules import config, search_engine, scraper, llm_processor, data_storage # Ensure config is imported
 
 # Define a type for the focused summary source details
 class FocusedSummarySource(TypedDict):
@@ -33,21 +35,24 @@ def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
     return score
 
 def run_search_and_analysis(
-    app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str],
-    num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any],
-    sheet_writing_enabled: bool, gsheets_secrets_present: bool
-) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]: # MODIFIED return type
+    app_config: 'config.AppConfig', # MODIFIED: Used string literal for forward reference
+    keywords_input: str,
+    llm_extract_queries_input: List[str],
+    num_results_wanted_per_keyword: int,
+    gs_worksheet: Optional[Any],
+    sheet_writing_enabled: bool,
+    gsheets_secrets_present: bool
+) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]:
     processing_log: List[str] = ["Processing started..."]
     results_data: List[Dict[str, Any]] = []
     consolidated_summary_text_for_batch: Optional[str] = None
-    focused_summary_source_details: List[FocusedSummarySource] = [] # NEW: To store details of sources for focused summary
+    focused_summary_source_details: List[FocusedSummarySource] = []
     initial_keywords_list: List[str] = [k.strip() for k in keywords_input.split(',') if k.strip()]
     initial_keywords_for_display: Set[str] = set(k.lower() for k in initial_keywords_list)
     llm_generated_keywords_set_for_display: Set[str] = set()
 
     if not initial_keywords_list:
         st.sidebar.error("Please enter at least one keyword.")
-        # MODIFIED: Added empty list for focused_summary_source_details
         return ["ERROR: No keywords provided."], [], None, initial_keywords_for_display, llm_generated_keywords_set_for_display, []
 
     keywords_list_val_runtime: List[str] = list(initial_keywords_list)
@@ -86,9 +91,32 @@ def run_search_and_analysis(
             else: processing_log.append("  ⚠️ LLM did not generate new queries.")
         else: processing_log.append("  ℹ️ No additional LLM queries requested (or needed based on input).")
 
-    # ... (rest of the progress bar and item processing loop remains the same) ...
+    oversample_factor: float = 2.0; max_google_fetch_per_keyword: int = 10; est_urls_to_fetch_per_keyword: int = min(max_google_fetch_per_keyword, int(num_results_wanted_per_keyword * oversample_factor))
+    if est_urls_to_fetch_per_keyword < num_results_wanted_per_keyword : est_urls_to_fetch_per_keyword = num_results_wanted_per_keyword
+    
+    total_llm_tasks_per_good_scrape: int = 0
+    if llm_key_available: 
+        total_llm_tasks_per_good_scrape += 1 
+        total_llm_tasks_per_good_scrape += len([q for q in llm_extract_queries_input if q.strip()]) 
+
+    total_major_steps_for_progress: int = (len(keywords_list_val_runtime) * est_urls_to_fetch_per_keyword) + \
+                                          (len(keywords_list_val_runtime) * num_results_wanted_per_keyword * total_llm_tasks_per_good_scrape)
+    if llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0: 
+        total_major_steps_for_progress += 1 
+    
+    current_major_step_count: int = 0
+    progress_bar_placeholder = st.empty()
+
+    if llm_key_available and initial_keywords_list and min(math.floor(len(initial_keywords_list) * 1.5), 5) > 0:
+        current_major_step_count +=1
+        progress_text = "LLM Query Generation Complete..."
+        progress_value = (current_major_step_count / total_major_steps_for_progress) if total_major_steps_for_progress > 0 else 0
+        with progress_bar_placeholder.container(): 
+            st.progress(min(max(progress_value, 0.0), 1.0), text=progress_text)
+
     # --- Item Processing Loop ---
     for keyword_val in keywords_list_val_runtime: 
+        # ... (rest of the item processing loop is unchanged)
         processing_log.append(f"\n🔎 Processing keyword: {keyword_val}")
         if not (app_config.google_search.api_key and app_config.google_search.cse_id):
             st.error("Google Search API Key or CSE ID not configured.")
@@ -218,84 +246,81 @@ def run_search_and_analysis(
     if results_data and llm_key_available:
         processing_log.append(f"\n✨ Generating consolidated overview...")
         with st.spinner("Generating consolidated overview..."):
-            # MODIFIED: Use focused_summary_source_details to store structured source info
-            # focused_summary_source_details is already initialized as empty list
-            temp_focused_texts_for_llm: List[str] = [] # Temporary list to hold only the texts for the LLM
+            temp_focused_texts_for_llm: List[str] = [] 
 
             if primary_llm_extract_query or secondary_llm_extract_query:
+                # focused_summary_source_details is already initialized as an empty list
+                # We will populate it here.
+                processed_item_texts_for_focused = set() # To avoid adding the exact same text snippet multiple times to LLM
+
                 for item in results_data:
                     item_url = item.get("url", "Unknown URL")
+                    
                     # Check Q1
                     if primary_llm_extract_query:
                         extraction_text_q1 = item.get("llm_extracted_info_q1")
-                        if extraction_text_q1: # Ensure text exists
+                        if extraction_text_q1:
                             score_q1 = _parse_score_from_extraction(extraction_text_q1)
                             if score_q1 is not None and score_q1 >= 3:
                                 source_entry_q1: FocusedSummarySource = {
-                                    "url": item_url,
-                                    "query_type": "Q1",
-                                    "query_text": primary_llm_extract_query,
-                                    "score": score_q1,
+                                    "url": item_url, "query_type": "Q1",
+                                    "query_text": primary_llm_extract_query, "score": score_q1,
                                     "llm_output_text": extraction_text_q1
                                 }
-                                if source_entry_q1 not in focused_summary_source_details: # Avoid duplicates if somehow processed twice
+                                # Add to details if not an exact duplicate entry (e.g. same URL, Q-type, text)
+                                if not any(d == source_entry_q1 for d in focused_summary_source_details):
                                     focused_summary_source_details.append(source_entry_q1)
+                                
+                                if extraction_text_q1 not in processed_item_texts_for_focused:
                                     temp_focused_texts_for_llm.append(extraction_text_q1)
+                                    processed_item_texts_for_focused.add(extraction_text_q1)
+                    
                     # Check Q2
                     if secondary_llm_extract_query:
                         extraction_text_q2 = item.get("llm_extracted_info_q2")
-                        if extraction_text_q2: # Ensure text exists
+                        if extraction_text_q2:
                             score_q2 = _parse_score_from_extraction(extraction_text_q2)
                             if score_q2 is not None and score_q2 >= 3:
                                 source_entry_q2: FocusedSummarySource = {
-                                    "url": item_url,
-                                    "query_type": "Q2",
-                                    "query_text": secondary_llm_extract_query,
-                                    "score": score_q2,
+                                    "url": item_url, "query_type": "Q2",
+                                    "query_text": secondary_llm_extract_query, "score": score_q2,
                                     "llm_output_text": extraction_text_q2
                                 }
-                                # Add Q2 entry only if its text is different from an already added Q1 text from the same item,
-                                # or if it's a new item. This avoids adding identical text twice if Q1 and Q2 happened to be the same and scored high.
-                                # A simpler way is to ensure temp_focused_texts_for_llm only gets unique texts.
-                                if extraction_text_q2 not in temp_focused_texts_for_llm:
-                                    focused_summary_source_details.append(source_entry_q2) # Add details even if text is same but source (Q2) is different
-                                    temp_focused_texts_for_llm.append(extraction_text_q2)
-                                elif source_entry_q2 not in focused_summary_source_details: # If text is same but want to log it as from Q2
+                                if not any(d == source_entry_q2 for d in focused_summary_source_details):
                                      focused_summary_source_details.append(source_entry_q2)
 
+                                if extraction_text_q2 not in processed_item_texts_for_focused:
+                                    temp_focused_texts_for_llm.append(extraction_text_q2)
+                                    processed_item_texts_for_focused.add(extraction_text_q2)
+            
+            final_texts_for_llm = temp_focused_texts_for_llm # Already unique due to `processed_item_texts_for_focused` set
 
-            # Ensure unique texts for LLM, but focused_summary_source_details can have multiple entries if Q1 & Q2 from same URL are distinct and high-scoring
-            final_texts_for_llm = sorted(list(set(temp_focused_texts_for_llm)))
-
-
-            if final_texts_for_llm: # Use this to decide if focused summary can be attempted
+            if final_texts_for_llm:
                 llm_context_for_focused_summary = primary_llm_extract_query if primary_llm_extract_query else "specific extracted information"
                 if not primary_llm_extract_query and secondary_llm_extract_query:
                     llm_context_for_focused_summary = secondary_llm_extract_query
 
-                # NEW LOGGING for sources
                 processing_log.append(f"\n📋 Preparing inputs for FOCUSED consolidated summary:")
                 processing_log.append(f"  Central Query Theme (typically based on Q1): '{llm_context_for_focused_summary}'")
-                if focused_summary_source_details:
-                    processing_log.append(f"  Found {len(focused_summary_source_details)} source snippet(s) (from Q1/Q2 extractions scoring >=3/5) to use as input:")
-                    for source_item in focused_summary_source_details:
+                if focused_summary_source_details: # Check if the detailed list has items
+                    processing_log.append(f"  Found {len(focused_summary_source_details)} source snippet(s) (from Q1/Q2 extractions scoring >=3/5) that contributed text for the LLM:")
+                    # Sort for consistent logging, e.g., by URL then query_type
+                    sorted_source_details = sorted(focused_summary_source_details, key=lambda x: (x['url'], x['query_type']))
+                    for source_item in sorted_source_details:
                         log_url = source_item['url']
                         log_q_type = source_item['query_type']
                         log_q_text_short = source_item['query_text'][:30] + "..." if len(source_item['query_text']) > 30 else source_item['query_text']
                         log_score = source_item['score']
-                        log_llm_output_short = source_item['llm_output_text'].replace('\n', ' ')[:70] + "..."
                         processing_log.append(f"    - From: {log_q_type} ('{log_q_text_short}') on URL: {log_url} (Score: {log_score}/5)")
-                        # Optionally log the snippet text too if desired, but can be verbose
-                        # processing_log.append(f"      Snippet: \"{log_llm_output_short}\"")
-                else: # Should not happen if final_texts_for_llm is populated, but as a safeguard
-                    processing_log.append(f"  Attempting FOCUSED consolidated summary with {len(final_texts_for_llm)} text snippet(s).")
+                else:
+                     processing_log.append(f"  Found {len(final_texts_for_llm)} unique text snippet(s) for LLM input (details not itemized in this pass).")
 
 
                 llm_api_key_to_use_consol: Optional[str] = app_config.llm.google_gemini_api_key if app_config.llm.provider == "google" else app_config.llm.openai_api_key
                 llm_model_to_use_consol: str = app_config.llm.google_gemini_model if app_config.llm.provider == "google" else app_config.llm.openai_model_summarize
 
                 generated_focused_summary = llm_processor.generate_consolidated_summary(
-                    summaries=tuple(final_texts_for_llm), # Pass the unique texts
+                    summaries=tuple(final_texts_for_llm), 
                     topic_context=topic_for_consolidation_for_batch,
                     api_key=llm_api_key_to_use_consol, model_name=llm_model_to_use_consol,
                     max_input_chars=app_config.llm.max_input_chars,
@@ -326,7 +351,7 @@ def run_search_and_analysis(
                     consolidated_summary_text_for_batch = generated_focused_summary
                     processing_log.append(f"  ✔️ Successfully generated FOCUSED consolidated summary.")
 
-            else: # No texts for focused summary, proceed to general
+            else: 
                 general_overview_info_prefix = "LLM_PROCESSOR_INFO: General overview as follows."
                 log_message_reason = ""
                 if primary_llm_extract_query or secondary_llm_extract_query:
@@ -349,7 +374,7 @@ def run_search_and_analysis(
                     processing_log.append(f"  Attempting GENERAL consolidated overview using {len(general_texts_for_consolidation)} item summaries.")
                     llm_api_key_to_use_consol: Optional[str] = app_config.llm.google_gemini_api_key if app_config.llm.provider == "google" else app_config.llm.openai_api_key
                     llm_model_to_use_consol: str = app_config.llm.google_gemini_model if app_config.llm.provider == "google" else app_config.llm.openai_model_summarize
-
+                    
                     generated_general_overview = llm_processor.generate_consolidated_summary(
                         summaries=tuple(general_texts_for_consolidation),
                         topic_context=topic_for_consolidation_for_batch,
@@ -357,31 +382,31 @@ def run_search_and_analysis(
                         max_input_chars=app_config.llm.max_input_chars,
                         extraction_query_for_consolidation=None
                     )
-
+                    
                     if generated_general_overview and not str(generated_general_overview).lower().startswith("llm_processor"):
-                        consolidated_summary_text_for_batch = generated_general_overview # Prefix is handled by llm_processor
+                        consolidated_summary_text_for_batch = generated_general_overview
                         processing_log.append("  ✔️ Successfully generated GENERAL consolidated overview.")
                     else:
                         processing_log.append(f"  ❌ LLM failed to generate a GENERAL overview from item summaries. LLM Output: {str(generated_general_overview)[:150]}")
                         consolidated_summary_text_for_batch = (general_overview_info_prefix +
                                                               "\n\n--- General Overview ---\nLLM_PROCESSOR_ERROR: The LLM failed to generate a general consolidated overview from the available item summaries.")
-                else:
+                else: 
                     no_summaries_message_suffix = " Additionally, no valid general item summaries were found to generate a general overview."
                     log_message_text = general_overview_info_prefix
                     if log_message_reason: log_message_text = log_message_text.replace("." , "") + log_message_reason
                     processing_log.append(f"  ❌ {log_message_text}{no_summaries_message_suffix}")
                     consolidated_summary_text_for_batch = general_overview_info_prefix + " However, no valid item summaries were available to generate it."
 
-        with progress_bar_placeholder.container(): st.empty()
+        with progress_bar_placeholder.container(): st.empty() 
 
-    elif not results_data and llm_key_available:
+    elif not results_data and llm_key_available: 
         consolidated_summary_text_for_batch = "LLM_PROCESSOR_INFO: No result items were successfully scraped and processed to create a consolidated summary."
         processing_log.append(f"\nℹ️ {consolidated_summary_text_for_batch}")
-    elif not llm_key_available:
+    elif not llm_key_available: 
         consolidated_summary_text_for_batch = "LLM_PROCESSOR_INFO: LLM processing is not configured. Consolidated summary cannot be generated."
         processing_log.append(f"\nℹ️ {consolidated_summary_text_for_batch}")
 
-    # ... (Google Sheets writing logic remains the same) ...
+    # ... (Google Sheets writing logic is unchanged)
     if sheet_writing_enabled and gs_worksheet: 
         if results_data or consolidated_summary_text_for_batch: 
             batch_process_timestamp_for_sheet: str = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -404,8 +429,7 @@ def run_search_and_analysis(
     elif not gsheets_secrets_present: 
         processing_log.append("\nℹ️ Google Sheets integration not configured. Data not saved to sheet.")
 
-
-    # ... (Final UI messages remain the same) ...
+    # ... (Final UI messages are unchanged)
     if results_data or consolidated_summary_text_for_batch:
         is_info_or_error_summary = consolidated_summary_text_for_batch and \
                                    (str(consolidated_summary_text_for_batch).lower().startswith("llm_processor_info:") or \
@@ -420,7 +444,6 @@ def run_search_and_analysis(
     else: 
         st.warning("Processing complete, but no data was generated (no results to process).")
         
-    # MODIFIED return statement
     return processing_log, results_data, consolidated_summary_text_for_batch, initial_keywords_for_display, llm_generated_keywords_set_for_display, focused_summary_source_details
 
 # end of modules/process_manager.py
