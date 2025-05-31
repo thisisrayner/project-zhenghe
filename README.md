@@ -18,15 +18,16 @@ The project is designed with a high degree of modularity, with `app.py` acting a
     *   **PDF:** Extracts document title (from metadata or filename) and full text content from PDF documents using `PyMuPDF`.
 *   **LLM Integration (Google Gemini):**
     *   **Individual Summaries:** If an LLM is configured, it automatically generates summaries of each successfully scraped web page's/document's content.
-    *   **Specific Information Extraction & Relevancy Scoring:** Extracts user-defined information from page/document content. The LLM also assigns a relevancy score (1/5 to 5/5) indicating how well the content matches the extraction query.
+    *   **Specific Information Extraction & Relevancy Scoring:** Extracts user-defined information (for up to two specific queries, Q1 and Q2) from page/document content. The LLM also assigns a relevancy score (1/5 to 5/5) indicating how well the content matches each extraction query. LLM prompts for this feature instruct the LLM to output only plain text.
     *   **Consolidated Overview:** Automatically generates a synthesized overview.
-        *   If a specific information query was provided by the user for extraction, the consolidated summary will focus on that query, using only individual item outputs that achieved a relevancy score of 3/5 or higher.
-        *   If no specific information query was used, a general consolidated summary is created from all valid individual LLM outputs.
+        *   If specific information query/queries (Q1 and/or Q2) were provided and items achieve a relevancy score of 3/5 or higher for *either* query, the consolidated summary will be **focused**. It will use the full text of these high-scoring Q1/Q2 extractions. The LLM is prompted to provide a more detailed and potentially longer overview (up to 2x the length of a general summary) based on these specific, relevant snippets, using the "Main Query 1" as the primary contextual theme if provided.
+        *   If no specific information queries were used, or if no items achieved a relevancy score of 3/5 or higher for any provided specific query, a **general consolidated summary** is created from all valid individual LLM-generated item summaries.
+        *   All consolidated overviews are instructed to be generated in plain text to avoid unwanted formatting.
 *   **Interactive UI & Results Display:**
     *   Built with Streamlit for easy input, configuration, and viewing of results and processing logs.
     *   **Visual Relevancy Cues:** Individually processed items in the results list are prefixed with visual markers:
-        *   Relevancy score emojis (e.g., 5️⃣, 4️⃣, 3️⃣).
-        *   A special ✨3️⃣ prefix if an item from an LLM-generated query also has a relevancy score of 3/5.
+        *   Relevancy score emojis (e.g., 5️⃣, 4️⃣, 3️⃣) for Q1 and Q2 if specific info was extracted.
+        *   A special ✨3️⃣ prefix if an item from an LLM-generated query also has a relevancy score of 3/5 for Q1.
         *   A 🤖 marker for any item originating from an LLM-generated search query.
         *   A 📄 marker for PDF documents.
 *   **Google Sheets Integration:**
@@ -40,7 +41,6 @@ The project is designed with a high degree of modularity, with `app.py` acting a
     *   API keys and settings are managed via Streamlit Secrets (`secrets.toml`).
 
 ## Project Structure
-
 
 streamlit-search-tool/
 ├── app.py # Main Streamlit application orchestrator
@@ -60,11 +60,12 @@ streamlit-search-tool/
 └── README.md # This file
 
       
-## Prerequisites
+## Prerequisites & Configuration
 
-Before you begin, ensure you have met the following requirements:
+To run this application, you will need the codebase and the following:
 
 *   **Python 3.8+**
+*   **All dependencies listed in `requirements.txt` installed** in your Python environment (e.g., using `pip install -r requirements.txt`). This includes `google-generativeai`, `pandas`, `openpyxl`, `streamlit`, `trafilatura`, `PyMuPDF`, `google-api-python-client`, `gspread`, `oauth2client`, `beautifulsoup4`, `requests`, and `tenacity`.
 *   **Google Account**
 *   **Google Cloud Platform (GCP) Project:**
     *   "Google Custom Search API" enabled.
@@ -76,18 +77,8 @@ Before you begin, ensure you have met the following requirements:
 *   **Google API Key (for Custom Search).**
 *   **Google Gemini API Key (for LLM features).** (Or other LLM provider API key if support is extended).
 *   **Google Service Account for Google Sheets:** (JSON key file, share Sheet with service account email).
-
-## Setup & Installation
-
-1.  **Clone the repository (if applicable).**
-2.  **Create a virtual environment (recommended).**
-3.  **Install dependencies:**
-    Ensure your `requirements.txt` includes `google-generativeai` (or your chosen LLM's SDK), `pandas`, `openpyxl`, `streamlit`, `trafilatura`, `PyMuPDF`, `google-api-python-client`, `gspread`, `oauth2client`, `beautifulsoup4`, `requests`, and `tenacity`.
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  **Configure Secrets (`.streamlit/secrets.toml`):**
-    (Example structure as provided previously, ensure all necessary keys are present).
+*   **Configure Secrets (`.streamlit/secrets.toml`):**
+    Ensure a `secrets.toml` file exists in a `.streamlit` directory at the root of the project. This file must contain all necessary API keys and configuration details.
 
     **Example `secrets.toml` structure:**
     ```toml
@@ -123,11 +114,17 @@ Before you begin, ensure you have met the following requirements:
 
 ## Running the Application
 
+From the root directory of the project:
 ```bash
 streamlit run app.py
 
+    
 
-Access at http://localhost:8501.
+IGNORE_WHEN_COPYING_START
+Use code with caution.
+IGNORE_WHEN_COPYING_END
+
+Access the application in your browser, typically at http://localhost:8501.
 Usage
 
     Navigate to the application URL.
@@ -136,15 +133,21 @@ Usage
 
     Configure "Number of successfully scraped results per keyword".
 
-    Optionally, provide a query in "Specific info to extract with LLM...". This influences relevancy scoring, the context for LLM-generated search queries, and the focus of the consolidated summary. (If left blank, general summaries will be generated, and the consolidated overview will be broader).
+    Optionally, provide up to two queries in "Specific Info to Extract (LLM)".
+
+        Main Query 1: This influences relevancy scoring, the context for LLM-generated search queries, and the primary focus of the consolidated summary if relevant items are found.
+
+        Additional Query 2: Also influences relevancy scoring and can contribute to a focused consolidated summary.
+
+        (If specific queries are left blank, general summaries will be generated, and the consolidated overview will be broader).
 
     Click "🚀 Start Search & Analysis". (Button will be enabled if Google Sheets is correctly configured and connected, or if GSheets integration is not fully configured in secrets - in which case it will run without GSheet writing).
 
     View progress and results. Expanders for individual items will show:
 
-        Emoji prefixes (e.g., 5️⃣, 4️⃣, 3️⃣) for relevancy scores if specific info was extracted.
+        Emoji prefixes (e.g., 5️⃣, 4️⃣, 3️⃣) for relevancy scores for Q1 and Q2 if specific info was extracted.
 
-        A special ✨3️⃣ prefix if an item from an LLM-generated query has a relevancy score of 3/5.
+        A special ✨3️⃣ prefix if an item from an LLM-generated query has a relevancy score of 3/5 for Q1.
 
         A 🤖 marker for any item originating from an LLM-generated search query.
 
@@ -156,7 +159,7 @@ Usage
 
     Download results via the "📥 Download Results as Excel" button.
 
-Note: LLM-enhanced query generation and individual item summarization are automatic features that run if a valid LLM API key is provided in the secrets.toml file. They are not separate toggles in the UI.
+Note: LLM-enhanced query generation and individual item summarization/extraction are automatic features that run if a valid LLM API key is provided in the secrets.toml file. They are not separate toggles in the UI.
 Important Note for Contributing Agents
 
 When modifying the codebase (app.py, modules/*.py):
@@ -165,7 +168,7 @@ When modifying the codebase (app.py, modules/*.py):
 
     Ensure all docstrings (module, function, class) are updated to reflect any changes in parameters, behavior, or new functionalities.
 
-    Maintain versioning comments at the top of each modified file. Increment the version appropriately (e.g., v3.0.0 to v3.0.1) and briefly note the key change in the version comment.
+    Maintain versioning comments at the top of each modified file. Increment the version appropriately (e.g., v1.3.3 to v1.3.4) and briefly note the key change in the version comment.
 
     Every Python code file provided MUST end with the comment // end of [filename] as the absolute last line. For example, app.py should end with // end of app.py.
 
