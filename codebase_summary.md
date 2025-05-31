@@ -452,7 +452,7 @@ Docstring:
 Docstring:
 [No docstring provided]
 
-### def render_sidebar(cfg: config.AppConfig, current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]
+### def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]
 Docstring:
 [No docstring provided]
 
@@ -460,9 +460,11 @@ Docstring:
 Docstring:
 [No docstring provided]
 
-### def display_consolidated_summary()
+### def display_consolidated_summary_and_sources(summary_text: Optional[str], focused_sources: Optional[List[Dict[str, Any]]], last_extract_queries: List[str]) -> None
 Docstring:
-[No docstring provided]
+```text
+Displays the consolidated summary and, if applicable, the sources used for a focused summary.
+```
 
 ### def display_individual_results()
 Docstring:
