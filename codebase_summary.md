@@ -83,7 +83,7 @@ Docstring: None
 Docstring: None
 
 ### def generate_consolidated_summary(summaries: tuple[Optional[str], ...], topic_context: str, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 150000, extraction_query_for_consolidation: Optional[str] = None) -> Optional[str]
-Docstring: Generates a consolidated overview from a list of individual LLM outputs.
+Docstring: None
 
 ### def generate_search_queries(original_keywords: tuple[str, ...], specific_info_query: Optional[str], num_queries_to_generate: int, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 2000) -> Optional[List[str]]
 Docstring: None
