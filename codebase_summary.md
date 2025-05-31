@@ -28,22 +28,83 @@ It is responsible for:
 ## File: modules/excel_handler.py
 Module Docstring:
 ```text
-Handles the creation and formatting of Excel files for exporting KSAT results.
+Handles the creation and formatting of Excel files for exporting application results.
+
+This module provides functions to convert processed item data and consolidated
+summaries into structured Pandas DataFrames and then into a downloadable
+Excel file format (.xlsx) with separate sheets for detailed item results and
+the overall summary.
 ```
 
 ### def prepare_item_details_df(results_data: List[Dict[str, Any]], last_extract_queries: List[str]) -> pd.DataFrame
 Docstring:
 ```text
-Prepares a Pandas DataFrame for the item details sheet in the Excel export.
+Prepares a Pandas DataFrame for the 'Item_Details' sheet in the Excel export.
+
+This function transforms a list of dictionaries, where each dictionary represents
+a processed item (e.g., a scraped URL with its metadata, LLM summary, and
+extracted information), into a Pandas DataFrame. It includes columns for
+both LLM extraction queries and their corresponding extracted information.
+
+Args:
+    results_data: List[Dict[str, Any]]: A list of dictionaries, where each
+        dictionary contains the data for a single processed item. Expected keys
+        include 'timestamp', 'keyword_searched', 'url', 'llm_summary',
+        'llm_extracted_info_q1', 'llm_extracted_info_q2', etc.
+    last_extract_queries: List[str]: A list containing the text of the
+        extraction queries used. The first element is Q1, the second is Q2.
+        Used to populate the 'LLM Extraction Query' columns.
+
+Returns:
+    pd.DataFrame: A DataFrame where each row corresponds to an item and columns
+        represent various details of the item, ready for Excel export.
 ```
 
 ### def prepare_consolidated_summary_df(consolidated_summary_text: Optional[str], results_data_count: int, last_keywords: str, primary_last_extract_query: Optional[str], batch_timestamp: str) -> Optional[pd.DataFrame]
 Docstring:
-[No docstring provided]
+```text
+Prepares a Pandas DataFrame for the 'Consolidated_Summary' sheet.
+
+This function creates a DataFrame containing the consolidated LLM summary,
+details about the batch (timestamp, keywords), the number of source items,
+and a note indicating if the summary was focused on a specific query.
+
+Args:
+    consolidated_summary_text: Optional[str]: The text of the consolidated
+        summary. If None, or starts with "error:", no DataFrame is created.
+    results_data_count: int: The number of individual items that were
+        considered for the consolidated summary.
+    last_keywords: str: A comma-separated string of keywords used for the batch.
+    primary_last_extract_query: Optional[str]: The text of the primary
+        extraction query (Q1), if provided. Used to note if the summary
+        was focused.
+    batch_timestamp: str: The timestamp for the batch processing run.
+
+Returns:
+    Optional[pd.DataFrame]: A DataFrame with the consolidated summary details,
+        or None if the consolidated_summary_text is empty, None, or an error message.
+```
 
 ### def to_excel_bytes(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes
 Docstring:
-[No docstring provided]
+```text
+Converts DataFrames for item details and an optional consolidated summary into Excel bytes.
+
+This function takes one mandatory DataFrame (item details) and an optional
+DataFrame (consolidated summary). It writes them to separate sheets
+('Item_Details' and 'Consolidated_Summary') in an Excel file and returns
+the file content as a byte string, suitable for downloading.
+
+Args:
+    df_item_details: pd.DataFrame: The DataFrame containing detailed information
+        for each processed item.
+    df_consolidated_summary: Optional[pd.DataFrame]: An optional DataFrame
+        containing the consolidated summary. If None or empty, this sheet
+        will not be added to the Excel file.
+
+Returns:
+    bytes: A byte string representing the content of the generated .xlsx Excel file.
+```
 
 ---
 
