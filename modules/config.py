@@ -1,4 +1,5 @@
 # modules/config.py
+# Version 1.4.1: Added APP_VERSION constant.
 # Version 1.4: Enhanced docstrings, type hinting, and added comments.
 
 """
@@ -7,13 +8,17 @@ Configuration management for the Streamlit Keyword Search & Analysis Tool.
 This module defines dataclasses for structuring configuration parameters and
 provides a function to load these configurations primarily from Streamlit
 secrets (`secrets.toml`). It handles settings for Google Search, LLM providers
-(Google Gemini, OpenAI), and Google Sheets integration.
+(Google Gemini, OpenAI), and Google Sheets integration. It also defines
+the application's version.
 """
 
 import streamlit as st
 from dataclasses import dataclass, field
 import json
 from typing import Optional, Dict, Any
+
+# --- Application Version ---
+APP_VERSION = "3.1.1" # Or align with the app.py version you are setting
 
 # --- Configuration Classes ---
 @dataclass
@@ -134,7 +139,8 @@ def load_config() -> Optional[AppConfig]:
 if __name__ == '__main__':
     # Test block for verifying config loading
     st.set_page_config(layout="wide")
-    st.title("Config Loader Test (v1.4)")
+    st.title("Config Loader Test (v1.4.1)") # Updated test title
+    st.write(f"App Version from config: {APP_VERSION}") # Test the new constant
     loaded_cfg = load_config()
     if loaded_cfg:
         st.success("Configuration loaded successfully!")
