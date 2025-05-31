@@ -20,7 +20,7 @@ The project is designed with a high degree of modularity, with `app.py` acting a
     *   **Individual Summaries:** If an LLM is configured, it automatically generates summaries of each successfully scraped web page's/document's content.
     *   **Specific Information Extraction & Relevancy Scoring:** Extracts user-defined information (for up to two specific queries, Q1 and Q2) from page/document content. The LLM also assigns a relevancy score (1/5 to 5/5) indicating how well the content matches each extraction query. LLM prompts for this feature instruct the LLM to output only plain text.
     *   **Consolidated Overview:** Automatically generates a synthesized overview.
-        *   If specific information query/queries (Q1 and/or Q2) were provided and items achieve a relevancy score of 3/5 or higher for *either* query, the consolidated summary will be **focused**. It will use the full text of these high-scoring Q1/Q2 extractions. The LLM is prompted to provide a more detailed and potentially longer overview (up to 2x the length of a general summary) based on these specific, relevant snippets, using the "Main Query 1" as the primary contextual theme if provided.
+        *   If specific information query/queries (Q1 and/or Q2) were provided and items achieve a relevancy score of 3/5 or higher for *either* query, the consolidated summary will be **focused**. It will use the full text of these high-scoring Q1/Q2 extractions. The LLM is prompted to provide a more detailed and potentially longer overview (aiming for up to 2x the length of a general summary) based on these specific, relevant snippets, using the "Main Query 1" as the primary contextual theme if provided.
         *   If no specific information queries were used, or if no items achieved a relevancy score of 3/5 or higher for any provided specific query, a **general consolidated summary** is created from all valid individual LLM-generated item summaries.
         *   All consolidated overviews are instructed to be generated in plain text to avoid unwanted formatting.
 *   **Interactive UI & Results Display:**
@@ -41,6 +41,12 @@ The project is designed with a high degree of modularity, with `app.py` acting a
     *   API keys and settings are managed via Streamlit Secrets (`secrets.toml`).
 
 ## Project Structure
+
+    
+
+IGNORE_WHEN_COPYING_START
+Use code with caution. Markdown
+IGNORE_WHEN_COPYING_END
 
 streamlit-search-tool/
 ├── app.py # Main Streamlit application orchestrator
@@ -118,11 +124,6 @@ From the root directory of the project:
 ```bash
 streamlit run app.py
 
-    
-
-IGNORE_WHEN_COPYING_START
-Use code with caution.
-IGNORE_WHEN_COPYING_END
 
 Access the application in your browser, typically at http://localhost:8501.
 Usage
@@ -166,13 +167,33 @@ When modifying the codebase (app.py, modules/*.py):
 
     Always provide the FULL and COMPLETE code for the modified file(s). Do not provide only snippets or omit sections like docstrings or existing function implementations unless explicitly asked to do so for brevity in a specific, isolated discussion. The primary user will be copy-pasting the entire file content.
 
-    Ensure all docstrings (module, function, class) are updated to reflect any changes in parameters, behavior, or new functionalities.
+    Comprehensive Docstring Updates are CRUCIAL:
 
-    Maintain versioning comments at the top of each modified file. Increment the version appropriately (e.g., v1.3.3 to v1.3.4) and briefly note the key change in the version comment.
+        Ensure all docstrings (module-level, function-level, and class-level) are meticulously updated to reflect any changes in parameters, return types, behavior, or new functionalities. The automated codebase_summary.md relies heavily on these docstrings for accuracy.
+
+        Module Docstrings: Should provide a concise overview of the module's purpose and its primary responsibilities within the application. Aim for 1-3 clear sentences.
+
+        Function/Method Docstrings:
+
+            Start with a concise one-line summary of what the function/method does. This line should be imperative (e.g., "Calculates X..." not "This function calculates X...").
+
+            If the function is complex or has non-obvious behavior, follow with a more detailed explanation in subsequent paragraphs.
+
+            Clearly document all Args:: For each argument, specify its name: type followed by a brief description of its purpose and any important considerations.
+
+            Clearly document Returns:: Specify the return_type (or Tuple[type1, type2, ...] for multiple returns) followed by a brief description of what is being returned.
+
+            If the function can Raises: specific exceptions under certain conditions, document these.
+
+        Class Docstrings: Describe the purpose of the class. For methods within the class (including __init__), follow the function/method docstring guidelines.
+
+        Avoid "None" or Placeholder Docstrings: Do not leave docstrings as "None", "...", or with placeholder text. If a function is very simple and its purpose is clear from its name and type hints, a concise one-liner might suffice, but always prioritize clarity and completeness for the benefit of future maintenance and automated documentation.
+
+    Maintain versioning comments at the top of each modified file. Increment the version appropriately (e.g., v1.3.3 to v1.3.4) and briefly note the key change(s) in the version comment.
 
     Every Python code file provided MUST end with the comment // end of [filename] as the absolute last line. For example, app.py should end with // end of app.py.
 
-Adherence to these guidelines is crucial for maintaining clarity and ensuring the primary user can integrate changes smoothly.
+Adherence to these guidelines is crucial for maintaining clarity, ensuring the primary user can integrate changes smoothly, and keeping the automated codebase_summary.md accurate and useful.
 Future API Layer Plan
 
 The modular design supports future API development (e.g., using FastAPI or Flask) for programmatic access and integration with other tools. This could involve creating endpoints that accept keywords and parameters, returning structured JSON results.
