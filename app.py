@@ -1,4 +1,7 @@
 # app.py
+# Version 3.1.1:
+# - Displays sources used for focused consolidated summaries.
+# - Handles new return value from process_manager.
 # Version 3.1.0: Integrated support for two distinct LLM extraction queries.
 # Main app orchestrates calls to new modules: ui_manager, process_manager, excel_handler.
 # Retains session state management, config loading, and GSheets setup.
@@ -16,9 +19,10 @@ It is responsible for:
     by calling the `ui_manager` module.
 6.  Triggering the core search, scrape, LLM processing, and analysis workflow
     (managed by `process_manager.py`) when the user initiates a search.
-7.  Receiving results from the `process_manager` and updating the session state.
-8.  Displaying the consolidated overview, individual item results, and processing logs
-    using the `ui_manager`.
+7.  Receiving results from the `process_manager` and updating the session state,
+    including details about sources for focused consolidated summaries.
+8.  Displaying the consolidated overview, its sources (if focused), individual item results,
+    and processing logs using the `ui_manager`.
 9.  Handling the generation and download of results as an Excel file via the
     `excel_handler` module.
 """
@@ -26,7 +30,7 @@ It is responsible for:
 import streamlit as st
 from modules import config, data_storage, ui_manager, process_manager, excel_handler
 import time
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List # process_manager.FocusedSummarySource won't be directly used here
 
 # --- Page Configuration ---
 st.set_page_config(page_title="Keyword Search & Analysis Tool (KSAT)", page_icon="🔮", layout="wide")
@@ -42,8 +46,9 @@ default_session_state: Dict[str, Any] = {
     'processing_log': [],
     'results_data': [],
     'last_keywords': "",
-    'last_extract_queries': ["", ""], 
+    'last_extract_queries': ["", ""],
     'consolidated_summary_text': None,
+    'focused_summary_sources': [], # NEW: For storing details of texts used in focused summary
     'gs_worksheet': None,
     'sheet_writing_enabled': False,
     'sheet_connection_attempted_this_session': False,
@@ -57,18 +62,18 @@ for key, default_value in default_session_state.items():
 
 # --- Google Sheets Setup ---
 gsheets_secrets_present = bool(cfg.gsheets.service_account_info and \
-                           (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name)) 
+                           (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name))
 
 if not st.session_state.sheet_connection_attempted_this_session:
     st.session_state.sheet_connection_attempted_this_session = True
-    st.session_state.sheet_writing_enabled = False 
-    st.session_state.gsheets_error_message = None  
-    
+    st.session_state.sheet_writing_enabled = False
+    st.session_state.gsheets_error_message = None
+
     if gsheets_secrets_present:
         st.session_state.gs_worksheet = data_storage.get_gspread_worksheet(
             cfg.gsheets.service_account_info,
             cfg.gsheets.spreadsheet_id,
-            cfg.gsheets.spreadsheet_name, 
+            cfg.gsheets.spreadsheet_name,
             cfg.gsheets.worksheet_name
         )
         if st.session_state.gs_worksheet:
@@ -99,18 +104,20 @@ if start_button:
     st.session_state.processing_log = ["Processing initiated..."]
     st.session_state.results_data = []
     st.session_state.consolidated_summary_text = None
+    st.session_state.focused_summary_sources = [] # Reset sources
     st.session_state.initial_keywords_for_display = set()
     st.session_state.llm_generated_keywords_set_for_display = set()
 
     st.session_state.last_keywords = keywords_input
-    st.session_state.last_extract_queries = llm_extract_queries_list 
+    st.session_state.last_extract_queries = llm_extract_queries_list
 
     active_llm_extract_queries = [q for q in llm_extract_queries_list if q.strip()]
 
-    log, data, summary, initial_kws_display, llm_kws_display = process_manager.run_search_and_analysis(
+    # MODIFIED: Unpack the new focused_summary_sources return value
+    log, data, summary, initial_kws_display, llm_kws_display, focused_sources = process_manager.run_search_and_analysis(
         app_config=cfg,
         keywords_input=keywords_input,
-        llm_extract_queries_input=active_llm_extract_queries, 
+        llm_extract_queries_input=active_llm_extract_queries,
         num_results_wanted_per_keyword=num_results,
         gs_worksheet=st.session_state.gs_worksheet,
         sheet_writing_enabled=st.session_state.sheet_writing_enabled,
@@ -120,6 +127,7 @@ if start_button:
     st.session_state.processing_log = log
     st.session_state.results_data = data
     st.session_state.consolidated_summary_text = summary
+    st.session_state.focused_summary_sources = focused_sources # Store the new data
     st.session_state.initial_keywords_for_display = initial_kws_display
     st.session_state.llm_generated_keywords_set_for_display = llm_kws_display
 
@@ -129,9 +137,9 @@ with results_container:
         st.markdown("---")
         df_item_details = excel_handler.prepare_item_details_df(
             st.session_state.results_data,
-            st.session_state.last_extract_queries 
+            st.session_state.last_extract_queries
         )
-        
+
         batch_excel_timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
         df_consolidated_summary_excel = None
         if st.session_state.consolidated_summary_text:
@@ -139,7 +147,7 @@ with results_container:
                 st.session_state.consolidated_summary_text,
                 len(st.session_state.results_data),
                 st.session_state.last_keywords,
-                st.session_state.last_extract_queries[0] if st.session_state.last_extract_queries and st.session_state.last_extract_queries[0] else None, 
+                st.session_state.last_extract_queries[0] if st.session_state.last_extract_queries and st.session_state.last_extract_queries[0] else None,
                 batch_excel_timestamp
             )
 
@@ -153,13 +161,18 @@ with results_container:
             key="download_excel_button"
         )
 
-    ui_manager.display_consolidated_summary()
-    ui_manager.display_individual_results()
+    # MODIFIED: Call the new UI manager function to display summary and its sources
+    ui_manager.display_consolidated_summary_and_sources(
+        st.session_state.consolidated_summary_text,
+        st.session_state.focused_summary_sources, # Pass the new data
+        st.session_state.last_extract_queries # Needed to determine if focused summary was attempted
+    )
+    ui_manager.display_individual_results() # Existing function
 
 with log_container:
     ui_manager.display_processing_log()
 
 st.markdown("---")
-st.caption("Keyword Search & Analysis Tool (KSAT) v3.1.0 (Multi-Query Extraction)")
+st.caption(f"Keyword Search & Analysis Tool (KSAT) v{config.APP_VERSION} (Focused Summary Sources)") # Assuming APP_VERSION is defined in config or use literal
 
 # end of app.py
