@@ -1,10 +1,10 @@
 # modules/llm_processor.py
-# Version 1.9.2:
-# - Modified `generate_consolidated_summary` to produce a more detailed and
-#   potentially longer overview when `extraction_query_for_consolidation` is provided.
-#   This is achieved by adjusting the LLM prompt and increasing max_output_tokens
-#   for the focused consolidation scenario.
-# - Other functions remain as in v1.9.1.
+# Version 1.9.3:
+# - Enhanced the focused consolidated summary prompt to further emphasize depth
+#   and direct synthesis from the provided high-scoring snippets.
+# - Added explicit instruction to all consolidated summary prompts (focused and general)
+#   to output in PLAIN TEXT ONLY to prevent unwanted markdown rendering.
+# - Other functions remain as in v1.9.2.
 
 """
 Handles interactions with Large Language Models (LLMs) for text processing.
@@ -21,7 +21,7 @@ import re
 # --- Module-level state and configure_gemini, _call_gemini_api, _truncate_text_for_gemini ---
 # --- generate_summary, extract_specific_information, _parse_score_and_get_content ---
 # --- generate_search_queries ---
-# (These functions remain unchanged from v1.9.1)
+# (These functions remain unchanged from v1.9.1 / v1.9.2)
 _GEMINI_CONFIGURED: bool = False
 _AVAILABLE_MODELS_CACHE: Optional[List[str]] = None
 
@@ -198,28 +198,20 @@ def generate_consolidated_summary(
     topic_context: str, 
     api_key: Optional[str],
     model_name: str = "models/gemini-1.5-flash-latest", 
-    max_input_chars: int = 150000, # Max input for the combined texts
+    max_input_chars: int = 150000, 
     extraction_query_for_consolidation: Optional[str] = None 
 ) -> Optional[str]:
-    """
-    Generates a consolidated overview from a list of individual LLM outputs.
-    If `extraction_query_for_consolidation` is provided, it filters inputs to use only those
-    with a parsed score of >=3 and focuses the summary, allowing for more depth.
-    Otherwise, it generates a general summary.
-    """
     if not summaries: 
         return "LLM_PROCESSOR: No individual LLM outputs provided for consolidation."
     if not configure_gemini(api_key): 
         return "LLM_PROCESSOR Error: Gemini not configured for consolidated summary."
     
     texts_for_llm_input: List[str] = []
-    # This flag now also signals if we should aim for a more detailed/longer focused summary
     is_focused_consolidation_active = bool(extraction_query_for_consolidation and extraction_query_for_consolidation.strip())
 
     for item_text in summaries: 
         if not item_text: continue
         lower_item_text = item_text.lower()
-        # Basic check for internally generated error/info messages from prior LLM steps
         if lower_item_text.startswith("llm error") or \
            lower_item_text.startswith("no text content") or \
            lower_item_text.startswith("llm_processor: no text content") or \
@@ -228,34 +220,15 @@ def generate_consolidated_summary(
            lower_item_text.startswith("llm_processor: response blocked"):
             continue
         
-        score, content = _parse_score_and_get_content(item_text) # content is text *after* score line
+        score, content = _parse_score_and_get_content(item_text)
         
         if is_focused_consolidation_active:
-            # For focused summary, we *only* use items that have a score and it's >= 3
-            # The `item_text` itself (which includes the score line) was passed in `summaries`
-            # by process_manager.py if the item had score >=3 for Q1/Q2.
-            # So, here we primarily care about using the `content` part.
-            # If an item in `summaries` for focused consolidation doesn't parse a score here, 
-            # it means it was likely a general summary accidentally included, or malformed.
-            # We will be strict: only use if score is parsed and >= 3 from THIS input.
             if score is not None and score >= 3:
                 if content: texts_for_llm_input.append(content)
-                # If content is empty but score was >=3, it means the LLM only returned score.
-                # We might choose to exclude it, or include a note. For now, exclude if no content.
-            # else:
-                # This text was passed for focused consolidation but doesn't meet criteria *now*.
-                # This could happen if process_manager.py's logic was broader.
-                # For v1.3.3+ of process_manager, it should only pass texts_for_focused_summary
-                # that already meet this.
-                # print(f"DEBUG: Focused mode, but item did not meet score criteria here: '{item_text[:100]}...'")
-        else: # General consolidation
-            # For general, if it had a score line, we use the content after it.
-            # If no score line, we use the whole item_text (which should be a general summary).
-            if content: # content is item_text if no score line, or text after score line if score line present
-                texts_for_llm_input.append(content) 
-            elif item_text: # Fallback if _parse_score_and_get_content returned empty content but item_text was not empty
+        else: 
+            if content: texts_for_llm_input.append(content) 
+            elif item_text: 
                 texts_for_llm_input.append(item_text)
-
 
     if not texts_for_llm_input:
         if is_focused_consolidation_active: 
@@ -270,24 +243,31 @@ def generate_consolidated_summary(
     final_topic_context_for_prompt: str
     max_tokens_for_call = 800 # Default for general summary
 
+    plain_text_instruction = "IMPORTANT: Your entire response MUST be in PLAIN TEXT only. Do not use any markdown formatting (e.g., no bolding, italics, headers, bullet points using '*', '-', or numbers, etc.). Paragraphs should be separated by a single newline character."
+
     if is_focused_consolidation_active:
         final_topic_context_for_prompt = extraction_query_for_consolidation 
         prompt_instruction = (
-            f"You are an expert research analyst. Based on the following collection of information items, which have been pre-selected for their high relevance to the central query: '{final_topic_context_for_prompt}', "
-            "your task is to synthesize a detailed and comprehensive consolidated overview. This overview should primarily focus on addressing this central query.\n"
-            "Go into depth on the key findings, arguments, data points, and examples from the provided texts that directly relate to this query. "
-            "Synthesize these into a cohesive and insightful narrative. Identify and discuss any significant patterns, supporting evidence, or notable discrepancies concerning the central query. "
-            "A longer, more elaborate output (e.g., 3-5 substantial paragraphs or more if the content supports it) is preferred for this focused task, providing a thorough analysis. "
-            "Structure your response in well-organized paragraphs. Do NOT include information clearly irrelevant to the central query, even if present in the source texts. Avoid generic introductory or concluding phrases about the act of summarizing.\n\n"
+            f"You are an expert research analyst. You have been provided with several text snippets, each pre-selected for its high relevance to the central query: '{final_topic_context_for_prompt}'.\n"
+            "Your task is to synthesize a **detailed and comprehensive consolidated overview that deeply explores the insights related to this central query**, drawing extensively from the provided text snippets.\n"
+            "Construct your overview by:\n"
+            "1. Identifying the key findings, arguments, data points, and examples within the snippets that directly address the query: '{final_topic_context_for_prompt}'.\n"
+            "2. Weaving these specific pieces of information into a cohesive and insightful narrative that thoroughly explains what was found concerning the query.\n"
+            "3. Highlighting any significant patterns, corroborating evidence, or notable discrepancies among the snippets regarding the query.\n"
+            "4. Elaborating on the implications or main takeaways from the collective information related to this specific query.\n"
+            "A longer, more elaborate output (e.g., 3-5 substantial paragraphs, or more if the content from the snippets supports it) is **strongly preferred** for this focused task, providing a thorough analysis. "
+            "The overview must be structured in well-organized paragraphs and **focus predominantly on synthesizing the details from the provided snippets relevant to the central query.** "
+            "Do NOT include information clearly irrelevant to this central query, even if peripherally mentioned in the source texts. "
+            f"Avoid generic introductory phrases (e.g., 'This summary will discuss...') or concluding phrases about the act of summarizing. Begin directly with the synthesis.\n{plain_text_instruction}\n\n"
         )
-        max_tokens_for_call = 1600 # Allow more tokens for a detailed focused summary
+        max_tokens_for_call = 1600 # Increased for more detail
     else: # General consolidation
         final_topic_context_for_prompt = topic_context 
         prompt_instruction = (
             f"You are an expert analyst tasked with synthesizing information from multiple text sources broadly related to the topic: '{final_topic_context_for_prompt}'.\n"
             "Your goal is to create a single, coherent consolidated overview. Identify the main themes, arguments, and key pieces of information present across the texts. "
             "Synthesize these into a cohesive narrative. If there are notable patterns, supporting evidence, or discrepancies across the sources, please highlight them. "
-            "Present your overview in well-structured paragraphs. Aim for a comprehensive yet reasonably concise summary (e.g., 2-4 substantial paragraphs).\n\n"
+            f"Present your overview in well-structured paragraphs. Aim for a comprehensive yet reasonably concise summary (e.g., 2-4 substantial paragraphs).\n{plain_text_instruction}\n\n"
         )
     
     prompt = (f"{prompt_instruction}--- PROVIDED TEXTS START ---\n{truncated_combined_text}\n--- PROVIDED TEXTS END ---\n\nConsolidated Overview (focused on '{final_topic_context_for_prompt}' if applicable):")
@@ -295,7 +275,7 @@ def generate_consolidated_summary(
     return _call_gemini_api(
         model_name, 
         [prompt], 
-        generation_config_args={"max_output_tokens": max_tokens_for_call, "temperature": 0.35} # Slightly higher temp for more elaborate focused
+        generation_config_args={"max_output_tokens": max_tokens_for_call, "temperature": 0.35}
     )
 
 @st.cache_data(max_entries=50, ttl=3600, show_spinner=False)
@@ -328,9 +308,9 @@ def generate_search_queries(
 # --- if __name__ == '__main__': block for testing (unchanged from v1.9.1) ---
 if __name__ == '__main__':
     st.set_page_config(layout="wide")
-    st.title("LLM Processor Module Test (Google Gemini v1.9.2 - Focused Consolidation Depth)") 
-    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="main_api_key_test_llm_v192") 
-    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="main_model_name_test_llm_v192") 
+    st.title("LLM Processor Module Test (Google Gemini v1.9.3 - Focused Consolidation Depth & Plain Text)") 
+    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="main_api_key_test_llm_v193") 
+    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="main_model_name_test_llm_v193") 
     configured_for_test = False 
     if GEMINI_API_KEY_TEST:
         if configure_gemini(GEMINI_API_KEY_TEST, force_recheck_models=True): 
@@ -343,10 +323,10 @@ if __name__ == '__main__':
     if configured_for_test:
         # ... (rest of the testing UI remains the same as v1.9.1) ...
         with st.expander("Test Generate Search Queries (Cached)", expanded=False):
-            test_original_keywords_str_gsq = st.text_input("Original Keywords (comma-separated):", "home office setup, ergonomic chair", key="test_orig_kw_gsq_v192")
-            test_specific_info_query_gsq = st.text_input("Specific Info Goal (Optional):", "best chair for back pain under $300", key="test_spec_info_gsq_v192")
-            test_num_queries_to_gen_gsq = st.number_input("Number of New Queries to Generate:", min_value=1, max_value=10, value=2, key="test_num_q_gen_gsq_v192")
-            if st.button("Test Query Generation (Cached)", key="test_query_gen_button_gsq_v192"):
+            test_original_keywords_str_gsq = st.text_input("Original Keywords (comma-separated):", "home office setup, ergonomic chair", key="test_orig_kw_gsq_v193")
+            test_specific_info_query_gsq = st.text_input("Specific Info Goal (Optional):", "best chair for back pain under $300", key="test_spec_info_gsq_v193")
+            test_num_queries_to_gen_gsq = st.number_input("Number of New Queries to Generate:", min_value=1, max_value=10, value=2, key="test_num_q_gen_gsq_v193")
+            if st.button("Test Query Generation (Cached)", key="test_query_gen_button_gsq_v193"):
                 test_original_keywords_tuple = tuple(k.strip() for k in test_original_keywords_str_gsq.split(',') if k.strip()) 
                 if not test_original_keywords_tuple: st.warning("Please enter original keywords.")
                 else:
@@ -357,16 +337,16 @@ if __name__ == '__main__':
                     else: st.write("No new queries generated or error.")
         
         with st.expander("Test Individual Summary (Cached)", expanded=False):
-            sample_text_summary_cached = st.text_area("Sample Text for Summary:", "The Eiffel Tower is a famous landmark in Paris, France.", height=100, key="test_sample_summary_text_v192_cached")
-            if st.button("Test Summary Generation (Cached)", key="test_summary_gen_button_v192_cached"):
+            sample_text_summary_cached = st.text_area("Sample Text for Summary:", "The Eiffel Tower is a famous landmark in Paris, France.", height=100, key="test_sample_summary_text_v193_cached")
+            if st.button("Test Summary Generation (Cached)", key="test_summary_gen_button_v193_cached"):
                  with st.spinner(f"Generating summary..."): 
                     summary_output = generate_summary(sample_text_summary_cached, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
                  st.markdown("**Generated Summary:**"); st.write(summary_output)
 
         with st.expander("Test Specific Information Extraction (Cached)", expanded=False):
-            sample_text_extraction_cached = st.text_area("Sample Text for Extraction:", "The main product is X and it costs $50. Contact sales@example.com for more.", height=100, key="test_sample_extraction_text_v192_cached")
-            extraction_query_test_cached = st.text_input("Extraction Query:", "product name and contact email", key="test_extraction_query_input_v192_cached")
-            if st.button("Test Extraction & Relevancy Scoring (Cached)", key="test_extraction_score_button_v192_cached"):
+            sample_text_extraction_cached = st.text_area("Sample Text for Extraction:", "The main product is X and it costs $50. Contact sales@example.com for more.", height=100, key="test_sample_extraction_text_v193_cached")
+            extraction_query_test_cached = st.text_input("Extraction Query:", "product name and contact email", key="test_extraction_query_input_v193_cached")
+            if st.button("Test Extraction & Relevancy Scoring (Cached)", key="test_extraction_score_button_v193_cached"):
                 if not extraction_query_test_cached: st.warning("Please enter an extraction query.")
                 else:
                     with st.spinner(f"Extracting info..."): 
@@ -375,11 +355,11 @@ if __name__ == '__main__':
 
         with st.expander("Test Consolidation (Cached)", expanded=False): 
             st.write("Provide texts for consolidation.")
-            consolidate_text_1_cached = st.text_area("Text 1 for Consolidation:", "Relevancy Score: 4/5\nAlpha project is about solar.", height=100, key="test_consolidate_text1_v192_cached")
-            consolidate_text_2_cached = st.text_area("Text 2 for Consolidation:", "Summary: Beta project reduces emissions.", height=100, key="test_consolidate_text2_v192_cached")
-            general_topic_context_cached = st.text_input("General Topic Context for Consolidation:", "Energy Projects", key="test_general_topic_input_v192_cached")
-            focused_extraction_query_cached = st.text_input("Focused Extraction Query for Consolidation (Optional):", "Alpha project", key="test_focused_query_input_v192_cached")
-            if st.button("Test Consolidation (Cached)", key="test_consolidation_button_main_v192_cached"):
+            consolidate_text_1_cached = st.text_area("Text 1 for Consolidation:", "Relevancy Score: 4/5\nAlpha project is about solar.", height=100, key="test_consolidate_text1_v193_cached")
+            consolidate_text_2_cached = st.text_area("Text 2 for Consolidation:", "Summary: Beta project reduces emissions.", height=100, key="test_consolidate_text2_v193_cached")
+            general_topic_context_cached = st.text_input("General Topic Context for Consolidation:", "Energy Projects", key="test_general_topic_input_v193_cached")
+            focused_extraction_query_cached = st.text_input("Focused Extraction Query for Consolidation (Optional):", "Alpha project", key="test_focused_query_input_v193_cached")
+            if st.button("Test Consolidation (Cached)", key="test_consolidation_button_main_v193_cached"):
                 if not general_topic_context_cached: st.warning("Please enter a general topic context.")
                 else:
                     texts_to_consolidate_tuple = tuple(t for t in [consolidate_text_1_cached, consolidate_text_2_cached] if t) 
