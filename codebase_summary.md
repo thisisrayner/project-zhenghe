@@ -1,7 +1,7 @@
 # Codebase Summary (v1.2)
 
 ## File: app.py
-Module Docstring: Streamlit Web Application for Keyword Search & Analysis Tool (KSAT).
+Module Docstring: Streamlit Web Application for the Keyword Search & Analysis Tool (KSAT).
 
 ---
 
