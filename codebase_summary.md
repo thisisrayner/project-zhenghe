@@ -16,9 +16,10 @@ It is responsible for:
     by calling the `ui_manager` module.
 6.  Triggering the core search, scrape, LLM processing, and analysis workflow
     (managed by `process_manager.py`) when the user initiates a search.
-7.  Receiving results from the `process_manager` and updating the session state.
-8.  Displaying the consolidated overview, individual item results, and processing logs
-    using the `ui_manager`.
+7.  Receiving results from the `process_manager` and updating the session state,
+    including details about sources for focused consolidated summaries.
+8.  Displaying the consolidated overview, its sources (if focused), individual item results,
+    and processing logs using the `ui_manager`.
 9.  Handling the generation and download of results as an Excel file via the
     `excel_handler` module.
 ```
