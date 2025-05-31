@@ -1,8 +1,8 @@
 # modules/process_manager.py
-# Version 1.3.1:
-# - Adjusted the LLM_PROCESSOR_INFO message when falling back to a general
-#   overview (due to no Q1 items meeting score >=3) to start with
-#   "LLM_PROCESSOR_INFO: General overview as follows..." and include context.
+# Version 1.3.2:
+# - Simplified the LLM_PROCESSOR_INFO message when a general overview is generated
+#   (due to no Q1 items meeting score >=3 or no Q1 query). The prefix is now
+#   consistently "LLM_PROCESSOR_INFO: General overview as follows."
 # - Retains stricter focused/general logic from v1.3.0 and progress bar fix.
 """
 Handles the main workflow of searching, scraping, LLM processing, and data aggregation.
@@ -214,7 +214,7 @@ def run_search_and_analysis(
     elif len(initial_keywords_list) == 1: topic_for_consolidation_for_batch = initial_keywords_list[0]
     else: topic_for_consolidation_for_batch = f"topics: {', '.join(initial_keywords_list[:3])}{'...' if len(initial_keywords_list) > 3 else ''}"
 
-    # --- CONSOLIDATED SUMMARY LOGIC (Version 1.3.1) ---
+    # --- CONSOLIDATED SUMMARY LOGIC (Version 1.3.2) ---
     if results_data and llm_key_available:
         processing_log.append(f"\n✨ Generating consolidated overview...")
         with st.spinner("Generating consolidated overview..."):
@@ -262,13 +262,16 @@ def run_search_and_analysis(
                     processing_log.append(f"  ✔️ Successfully generated FOCUSED consolidated summary from Q1 items.")
 
             else: # Branch 2: NO Q1 items scored >= 3 (or no primary_llm_extract_query)
-                general_overview_message_start = "LLM_PROCESSOR_INFO: General overview as follows ("
+                # Simplified prefix for general overview
+                general_overview_info_prefix = "LLM_PROCESSOR_INFO: General overview as follows."
+                
+                log_message_reason = ""
                 if primary_llm_extract_query:
-                    general_overview_message_start += f"no items met Q1 score >=3 criteria for query '{primary_llm_extract_query}'"
+                    log_message_reason = f" (No items met Q1 score >=3 criteria for query '{primary_llm_extract_query}'.)"
                 else:
-                    general_overview_message_start += "no specific query was provided for focused summary"
-                general_overview_message_start += ")."
-                processing_log.append(f"  {general_overview_message_start} Attempting general overview from item summaries.")
+                    log_message_reason = " (No specific query was provided for focused summary.)"
+                processing_log.append(f"  {general_overview_info_prefix}{log_message_reason} Attempting general overview from item summaries.")
+
 
                 general_texts_for_consolidation: List[str] = []
                 for item in results_data:
@@ -291,15 +294,14 @@ def run_search_and_analysis(
                     )
                     
                     if generated_general_overview and not str(generated_general_overview).lower().startswith("llm_processor"):
-                        consolidated_summary_text_for_batch = general_overview_message_start + "\n\n--- General Overview ---\n" + generated_general_overview
+                        consolidated_summary_text_for_batch = general_overview_info_prefix + "\n\n--- General Overview ---\n" + generated_general_overview
                         processing_log.append("  ✔️ Successfully generated GENERAL consolidated overview.")
                     else:
                         processing_log.append(f"  ❌ LLM failed to generate a GENERAL overview from item summaries. LLM Output: {str(generated_general_overview)[:150]}")
-                        consolidated_summary_text_for_batch = general_overview_message_start + "\n\n--- General Overview ---\nLLM_PROCESSOR_ERROR: The LLM failed to generate a general consolidated overview from the available item summaries."
+                        consolidated_summary_text_for_batch = general_overview_info_prefix + "\n\n--- General Overview ---\nLLM_PROCESSOR_ERROR: The LLM failed to generate a general consolidated overview from the available item summaries."
                 else: 
-                    no_summaries_message_suffix = " Additionally, no valid general item summaries were found to generate a general overview."
-                    processing_log.append(f"  ❌ {general_overview_message_start.replace(').', ')')}{no_summaries_message_suffix}") # Log modified message
-                    consolidated_summary_text_for_batch = general_overview_message_start.replace("Attempting general overview from item summaries.", "No valid general item summaries were available.")
+                    processing_log.append(f"  ❌ No valid general item summaries found to generate a general overview.{log_message_reason}")
+                    consolidated_summary_text_for_batch = general_overview_info_prefix + " However, no valid item summaries were available to generate it."
         
         with progress_bar_placeholder.container(): st.empty() 
     
