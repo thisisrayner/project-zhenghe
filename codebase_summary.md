@@ -222,100 +222,51 @@ and includes retry mechanisms for API calls.
 Docstring:
 ```text
 Configures the Google Gemini API client and lists available models.
-
-Sets up the `genai` client with the provided API key. If successful, it attempts
-to list models supporting 'generateContent' and caches them. This function is
-called before any LLM operation. Configuration status and model list are cached
-at the module level to avoid redundant calls.
-
 Args:
-    api_key: Optional[str]: The Google Gemini API key. If None or empty,
-        configuration will fail.
-    force_recheck_models: bool: If True, forces a re-fetch of available models
-        even if they were previously cached. Defaults to False.
-
+    api_key: Optional[str]: The Google Gemini API key.
+    force_recheck_models: bool: If True, forces a re-fetch of available models.
 Returns:
-    bool: True if configuration was successful and at least one suitable model
-        is available, False otherwise. Outputs warnings/errors to Streamlit UI
-        or console on failure.
+    bool: True if configuration was successful, False otherwise.
 ```
 
 ### def _call_gemini_api(model_name: str, prompt_parts: List[str], generation_config_args: Optional[Dict[str, Any]] = None, safety_settings_args: Optional[List[Dict[str, Any]]] = None, max_retries: int = 3, initial_backoff_seconds: float = 5.0, max_backoff_seconds: float = 60.0) -> Optional[str]
 Docstring:
 ```text
 Calls the Google Gemini API with specified parameters and handles retries.
-
 Args:
-    model_name: str: The name of the Gemini model to use.
-    prompt_parts: List[str]: A list of strings forming the prompt content.
-    generation_config_args: Optional arguments for `genai.types.GenerationConfig`.
-    safety_settings_args: Optional safety settings for the API call.
-    max_retries: int: Maximum number of retries for rate limit errors.
-    initial_backoff_seconds: float: Initial delay for retries.
-    max_backoff_seconds: float: Maximum delay for retries.
-
+    model_name: Name of the Gemini model.
+    prompt_parts: List of strings for the prompt.
+    generation_config_args: Optional generation config.
+    safety_settings_args: Optional safety settings.
+    max_retries: Max retries for rate limits.
+    initial_backoff_seconds: Initial retry delay.
+    max_backoff_seconds: Max retry delay.
 Returns:
-    Optional[str]: The text response from the LLM, or an error message string.
+    LLM text response or an error message string.
 ```
 
 ### def _truncate_text_for_gemini(text: str, model_name: str, max_input_chars: int) -> str
 Docstring:
 ```text
-Truncates text to ensure it's within a specified character limit for Gemini.
-
-Args:
-    text: str: The input text string.
-    model_name: str: The name of the model.
-    max_input_chars: int: The maximum allowed characters for the input text.
-
-Returns:
-    str: The original text if within limits, or the truncated text.
+Truncates text to a maximum character limit.
 ```
 
 ### def generate_summary(text_content: Optional[str], api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 100000) -> Optional[str]
 Docstring:
 ```text
-Generates a summary for the given text content using the LLM.
-This summary is intended to be plain text.
-
-Args:
-    text_content: Optional[str]: The text to be summarized.
-    api_key: Optional[str]: The Google Gemini API key.
-    model_name: str: The Gemini model to use for summarization.
-    max_input_chars: int: Maximum characters of text_content to pass to the LLM.
-
-Returns:
-    Optional[str]: The generated summary as a string, or an informational/error message.
+Generates a plain text summary for given text content.
 ```
 
 ### def extract_specific_information(text_content: Optional[str], extraction_query: str, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 100000) -> Optional[str]
 Docstring:
 ```text
-Extracts specific information from text content based on a query and scores its relevancy.
-The extracted information part (after the score line) should be plain text.
-
-Args:
-    text_content: Optional[str]: The text from which to extract information.
-    extraction_query: str: The user's query guiding the information extraction.
-    api_key: Optional[str]: The Google Gemini API key.
-    model_name: str: The Gemini model to use.
-    max_input_chars: int: Maximum characters of text_content to pass to the LLM.
-
-Returns:
-    Optional[str]: A string starting with "Relevancy Score: X/5" followed by
-        the extracted information, or an informational/error message.
+Extracts specific info and scores relevancy. Extracted info part is plain text.
 ```
 
 ### def _parse_score_and_get_content(text_with_potential_score: str) -> Tuple[Optional[int], str]
 Docstring:
 ```text
-Parses a relevancy score and extracts content from a string.
-
-Args:
-    text_with_potential_score: str: The input string.
-
-Returns:
-    Tuple[Optional[int], str]: Score (or None) and the remaining content text.
+Parses score and extracts content.
 ```
 
 ### def generate_consolidated_summary(summaries: Tuple[Optional[str], ...], topic_context: str, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 150000, extraction_query_for_consolidation: Optional[str] = None, secondary_query_for_enrichment: Optional[str] = None) -> Optional[str]
@@ -323,38 +274,12 @@ Docstring:
 ```text
 Generates a consolidated summary with a narrative part and a TLDR section.
 The narrative is plain text. The TLDR section uses dash-prefixed key points.
-
-Args:
-    summaries: Tuple of strings (individual LLM outputs).
-    topic_context: General topic, used if a general summary is generated.
-    api_key: The LLM API key.
-    model_name: The LLM model to use.
-    max_input_chars: Max combined characters of input texts for the LLM.
-    extraction_query_for_consolidation: Optional primary query (Q1) to focus on.
-    secondary_query_for_enrichment: Optional secondary query (Q2) to enrich the Q1 focus.
-
-Returns:
-    A string containing the narrative summary followed by a TLDR section,
-    or an informational/error message.
 ```
 
 ### def generate_search_queries(original_keywords: Tuple[str, ...], specific_info_query: Optional[str], specific_info_query_2: Optional[str], num_queries_to_generate: int, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 2500) -> Optional[List[str]]
 Docstring:
 ```text
-Generates new search queries based on original keywords and specific information goals (Q1 and Q2).
-Output queries are plain text, one per line.
-
-Args:
-    original_keywords: Tuple[str, ...]: Initial keywords from the user.
-    specific_info_query: Optional[str]: The primary specific information goal (Main Query 1).
-    specific_info_query_2: Optional[str]: The secondary specific information goal (Main Query 2).
-    num_queries_to_generate: int: The exact number of new search queries to generate.
-    api_key: Optional[str]: The Google Gemini API key.
-    model_name: str: The Gemini model to use.
-    max_input_chars: int: Max characters of the context (keywords + Q1 + Q2) for the LLM.
-
-Returns:
-    Optional[List[str]]: A list of generated search query strings.
+Generates new search queries.
 ```
 
 ---
