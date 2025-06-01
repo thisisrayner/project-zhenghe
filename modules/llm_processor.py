@@ -1,17 +1,15 @@
 # modules/llm_processor.py
-# Version 1.9.6a (or 1.9.7):
+# Version 1.9.7: (Assuming new version for this significant fix)
+# - Added post-processing in `generate_consolidated_summary` to correctly
+#   format dash-prefixed TL;DR points onto new lines for UI rendering.
+# Version 1.9.6a:
 # - Attempt to make TL;DR instruction more prominent in `generate_consolidated_summary` prompt.
-# - Added a warning print if "TLDR:" is missing from the output.
 # Version 1.9.6:
 # - Modified `generate_consolidated_summary` prompt for narrative + dash-bulleted TLDR.
-# - Refined plain text instructions within prompts.
 # Version 1.9.5:
 # - Added Q2 enrichment to focused consolidated summary prompt.
 # Version 1.9.4:
 # - Enhanced `generate_search_queries` to include Q2 in context and updated prompt.
-# Version 1.9.3:
-# - Enhanced the focused consolidated summary prompt for depth and plain text output.
-# - Comprehensive docstring review and updates.
 
 """
 Handles interactions with Large Language Models (LLMs), specifically Google Gemini.
@@ -43,22 +41,11 @@ _AVAILABLE_MODELS_CACHE: Optional[List[str]] = None
 def configure_gemini(api_key: Optional[str], force_recheck_models: bool = False) -> bool:
     """
     Configures the Google Gemini API client and lists available models.
-
-    Sets up the `genai` client with the provided API key. If successful, it attempts
-    to list models supporting 'generateContent' and caches them. This function is
-    called before any LLM operation. Configuration status and model list are cached
-    at the module level to avoid redundant calls.
-
     Args:
-        api_key: Optional[str]: The Google Gemini API key. If None or empty,
-            configuration will fail.
-        force_recheck_models: bool: If True, forces a re-fetch of available models
-            even if they were previously cached. Defaults to False.
-
+        api_key: Optional[str]: The Google Gemini API key.
+        force_recheck_models: bool: If True, forces a re-fetch of available models.
     Returns:
-        bool: True if configuration was successful and at least one suitable model
-            is available, False otherwise. Outputs warnings/errors to Streamlit UI
-            or console on failure.
+        bool: True if configuration was successful, False otherwise.
     """
     global _GEMINI_CONFIGURED, _AVAILABLE_MODELS_CACHE
     if _GEMINI_CONFIGURED and not force_recheck_models and _AVAILABLE_MODELS_CACHE is not None:
@@ -106,102 +93,60 @@ def _call_gemini_api(
 ) -> Optional[str]:
     """
     Calls the Google Gemini API with specified parameters and handles retries.
-
     Args:
-        model_name: str: The name of the Gemini model to use.
-        prompt_parts: List[str]: A list of strings forming the prompt content.
-        generation_config_args: Optional arguments for `genai.types.GenerationConfig`.
-        safety_settings_args: Optional safety settings for the API call.
-        max_retries: int: Maximum number of retries for rate limit errors.
-        initial_backoff_seconds: float: Initial delay for retries.
-        max_backoff_seconds: float: Maximum delay for retries.
-
+        model_name: Name of the Gemini model.
+        prompt_parts: List of strings for the prompt.
+        generation_config_args: Optional generation config.
+        safety_settings_args: Optional safety settings.
+        max_retries: Max retries for rate limits.
+        initial_backoff_seconds: Initial retry delay.
+        max_backoff_seconds: Max retry delay.
     Returns:
-        Optional[str]: The text response from the LLM, or an error message string.
+        LLM text response or an error message string.
     """
     if not _GEMINI_CONFIGURED:
         return "LLM_PROCESSOR Error: Gemini client not configured."
-
     validated_model_name = model_name
     if _AVAILABLE_MODELS_CACHE is not None:
         if model_name not in _AVAILABLE_MODELS_CACHE:
             prefixed_attempt = f"models/{model_name}" if not model_name.startswith("models/") else model_name
-            if prefixed_attempt in _AVAILABLE_MODELS_CACHE:
-                validated_model_name = prefixed_attempt
-            else:
-                return f"LLM_PROCESSOR Error: Model '{model_name}' not found or not supported. Available: {_AVAILABLE_MODELS_CACHE}"
-    try:
-        model_obj = genai.GenerativeModel(validated_model_name)
-    except Exception as e_model_init:
-        return f"LLM_PROCESSOR Error: Could not initialize model '{validated_model_name}': {e_model_init}"
-
+            if prefixed_attempt in _AVAILABLE_MODELS_CACHE: validated_model_name = prefixed_attempt
+            else: return f"LLM_PROCESSOR Error: Model '{model_name}' not found. Available: {_AVAILABLE_MODELS_CACHE}"
+    try: model_obj = genai.GenerativeModel(validated_model_name)
+    except Exception as e_model_init: return f"LLM_PROCESSOR Error: Could not initialize model '{validated_model_name}': {e_model_init}"
+    
     effective_gen_config_params = {"max_output_tokens": 1024} 
-    if generation_config_args:
-        effective_gen_config_params.update(generation_config_args)
-    if "temperature" not in effective_gen_config_params:
-        effective_gen_config_params["temperature"] = 0.4
+    if generation_config_args: effective_gen_config_params.update(generation_config_args)
+    if "temperature" not in effective_gen_config_params: effective_gen_config_params["temperature"] = 0.4 
 
     generation_config = genai.types.GenerationConfig(**effective_gen_config_params)
-    safety_settings = safety_settings_args or [
-        {"category": cat, "threshold": "BLOCK_ONLY_HIGH"}
-        for cat in ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
-                    "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]
-    ]
-    current_retry = 0
-    current_backoff = initial_backoff_seconds
+    safety_settings = safety_settings_args or [{"category": cat, "threshold": "BLOCK_ONLY_HIGH"} for cat in ["HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT"]]
+    current_retry = 0; current_backoff = initial_backoff_seconds
     while current_retry <= max_retries:
         try:
-            response = model_obj.generate_content(
-                prompt_parts,
-                generation_config=generation_config,
-                safety_settings=safety_settings,
-                stream=False
-            )
+            response = model_obj.generate_content(prompt_parts, generation_config=generation_config, safety_settings=safety_settings, stream=False)
             if not response.candidates:
                 reason_message = "LLM_PROCESSOR: Response blocked or empty."
                 if response.prompt_feedback:
                     reason_message += f" Reason: {response.prompt_feedback.block_reason}."
-                    if response.prompt_feedback.block_reason_message:
-                        reason_message += f" Message: {response.prompt_feedback.block_reason_message}"
+                    if response.prompt_feedback.block_reason_message: reason_message += f" Message: {response.prompt_feedback.block_reason_message}"
                     if response.prompt_feedback.safety_ratings:
                         for rating in response.prompt_feedback.safety_ratings:
-                            if rating.blocked:
-                                reason_message += f" Blocked by safety category: {rating.category}."
-                print(reason_message)
-                return reason_message
+                            if rating.blocked: reason_message += f" Blocked by safety category: {rating.category}."
+                print(reason_message); return reason_message 
             return response.text.strip() if response.text else "LLM_PROCESSOR: Received empty text response."
         except Exception as e:
             error_str = str(e).lower()
-            is_rate_limit_error = (
-                "429" in error_str or
-                "resourceexhausted" in error_str.replace(" ", "") or
-                "resource exhausted" in error_str or
-                ("rate" in error_str and "limit" in error_str) or
-                (hasattr(e, 'details') and callable(e.details) and "Quota" in e.details()) or
-                (hasattr(e, 'code') and callable(e.code) and e.code().value == 8) 
-            )
+            is_rate_limit_error = ("429" in error_str or "resourceexhausted" in error_str.replace(" ", "") or "resource exhausted" in error_str or ("rate" in error_str and "limit" in error_str) or (hasattr(e, 'details') and callable(e.details) and "Quota" in e.details()) or (hasattr(e, 'code') and callable(e.code) and e.code().value == 8) ) 
             if is_rate_limit_error and current_retry < max_retries:
-                current_retry += 1
-                print(f"LLM_PROCESSOR: Rate limit hit for '{validated_model_name}'. Retrying in {current_backoff:.1f}s (Attempt {current_retry}/{max_retries}). Error: {str(e)[:150]}...")
-                time.sleep(current_backoff)
-                current_backoff = min(current_backoff * 2 + random.uniform(0, 1.0), max_backoff_seconds)
-            else:
-                print(f"LLM_PROCESSOR: Unrecoverable error for '{validated_model_name}': {e.__class__.__name__} - {str(e)[:300]}")
-                return f"LLM Error for '{validated_model_name}': {e.__class__.__name__} - {str(e)[:300]}"
+                current_retry += 1; print(f"LLM_PROCESSOR: Rate limit hit for '{validated_model_name}'. Retrying in {current_backoff:.1f}s (Attempt {current_retry}/{max_retries}). Error: {str(e)[:150]}...") 
+                time.sleep(current_backoff); current_backoff = min(current_backoff * 2 + random.uniform(0, 1.0), max_backoff_seconds)
+            else: print(f"LLM_PROCESSOR: Unrecoverable error for '{validated_model_name}': {e.__class__.__name__} - {str(e)[:300]}"); return f"LLM Error for '{validated_model_name}': {e.__class__.__name__} - {str(e)[:300]}"
     return f"LLM_PROCESSOR Error: Max retries ({max_retries}) reached for '{validated_model_name}'."
 
+
 def _truncate_text_for_gemini(text: str, model_name: str, max_input_chars: int) -> str:
-    """
-    Truncates text to ensure it's within a specified character limit for Gemini.
-
-    Args:
-        text: str: The input text string.
-        model_name: str: The name of the model.
-        max_input_chars: int: The maximum allowed characters for the input text.
-
-    Returns:
-        str: The original text if within limits, or the truncated text.
-    """
+    """Truncates text to a maximum character limit."""
     if len(text) > max_input_chars:
         return text[:max_input_chars]
     return text
@@ -213,24 +158,9 @@ def generate_summary(
     model_name: str = "models/gemini-1.5-flash-latest",
     max_input_chars: int = 100000
 ) -> Optional[str]:
-    """
-    Generates a summary for the given text content using the LLM.
-    This summary is intended to be plain text.
-
-    Args:
-        text_content: Optional[str]: The text to be summarized.
-        api_key: Optional[str]: The Google Gemini API key.
-        model_name: str: The Gemini model to use for summarization.
-        max_input_chars: int: Maximum characters of text_content to pass to the LLM.
-
-    Returns:
-        Optional[str]: The generated summary as a string, or an informational/error message.
-    """
-    if not text_content:
-        return "LLM_PROCESSOR: No text content for summary."
-    if not configure_gemini(api_key):
-        return "LLM_PROCESSOR Error: Gemini not configured for summary."
-
+    """Generates a plain text summary for given text content."""
+    if not text_content: return "LLM_PROCESSOR: No text content for summary."
+    if not configure_gemini(api_key): return "LLM_PROCESSOR Error: Gemini not configured for summary."
     truncated_text = _truncate_text_for_gemini(text_content, model_name, max_input_chars)
     prompt = (
         "You are an expert assistant specializing in creating detailed and insightful summaries of web page content.\n"
@@ -243,11 +173,7 @@ def generate_summary(
         "--- WEB PAGE CONTENT END ---\n\n"
         "Detailed Summary (PLAIN TEXT ONLY):"
     )
-    return _call_gemini_api(
-        model_name,
-        [prompt],
-        generation_config_args={"max_output_tokens": 512, "temperature": 0.3}
-    )
+    return _call_gemini_api(model_name, [prompt], generation_config_args={"max_output_tokens": 512, "temperature": 0.3})
 
 @st.cache_data(max_entries=100, ttl=3600, show_spinner=False)
 def extract_specific_information(
@@ -257,28 +183,10 @@ def extract_specific_information(
     model_name: str = "models/gemini-1.5-flash-latest",
     max_input_chars: int = 100000
 ) -> Optional[str]:
-    """
-    Extracts specific information from text content based on a query and scores its relevancy.
-    The extracted information part (after the score line) should be plain text.
-
-    Args:
-        text_content: Optional[str]: The text from which to extract information.
-        extraction_query: str: The user's query guiding the information extraction.
-        api_key: Optional[str]: The Google Gemini API key.
-        model_name: str: The Gemini model to use.
-        max_input_chars: int: Maximum characters of text_content to pass to the LLM.
-
-    Returns:
-        Optional[str]: A string starting with "Relevancy Score: X/5" followed by
-            the extracted information, or an informational/error message.
-    """
-    if not text_content:
-        return "LLM_PROCESSOR: No text content for extraction."
-    if not extraction_query:
-        return "LLM_PROCESSOR: No extraction query."
-    if not configure_gemini(api_key):
-        return "LLM_PROCESSOR Error: Gemini not configured for extraction."
-
+    """Extracts specific info and scores relevancy. Extracted info part is plain text."""
+    if not text_content: return "LLM_PROCESSOR: No text content for extraction."
+    if not extraction_query: return "LLM_PROCESSOR: No extraction query."
+    if not configure_gemini(api_key): return "LLM_PROCESSOR Error: Gemini not configured for extraction."
     truncated_text = _truncate_text_for_gemini(text_content, model_name, max_input_chars)
     plain_text_instruction_for_extraction = (
         "For the extracted information that follows the 'Relevancy Score:' line, "
@@ -286,7 +194,6 @@ def extract_specific_information(
         "separate them clearly, typically by starting each distinct piece on a new line. "
         "Do not use markdown like bolding, italics, or lists for this extracted content part."
     )
-
     prompt = (
         "You are a highly skilled information extraction and relevancy scoring assistant.\n"
         f"Your primary task is to analyze the following web page content based on the user's query: '{extraction_query}'.\n\n"
@@ -305,37 +212,19 @@ def extract_specific_information(
         "--- WEB PAGE CONTENT END ---\n\n"
         f"Response (starting with Relevancy Score) regarding '{extraction_query}':"
     )
-    return _call_gemini_api(
-        model_name,
-        [prompt],
-        generation_config_args={"max_output_tokens": 750, "temperature": 0.3}
-    )
+    return _call_gemini_api(model_name, [prompt], generation_config_args={"max_output_tokens": 750, "temperature": 0.3})
 
 def _parse_score_and_get_content(text_with_potential_score: str) -> Tuple[Optional[int], str]:
-    """
-    Parses a relevancy score and extracts content from a string.
-
-    Args:
-        text_with_potential_score: str: The input string.
-
-    Returns:
-        Tuple[Optional[int], str]: Score (or None) and the remaining content text.
-    """
-    score = None
-    content_text = text_with_potential_score
+    """Parses score and extracts content."""
+    score = None; content_text = text_with_potential_score
     if text_with_potential_score and text_with_potential_score.startswith("Relevancy Score: "):
         parts = text_with_potential_score.split('\n', 1)
         score_line = parts[0]
         try:
             score_str = score_line.split("Relevancy Score: ")[1].split('/')[0]
             score = int(score_str)
-            if len(parts) > 1:
-                content_text = parts[1].strip()
-            else:
-                content_text = ""
-        except (IndexError, ValueError):
-            score = None
-            content_text = text_with_potential_score
+            content_text = parts[1].strip() if len(parts) > 1 else ""
+        except (IndexError, ValueError): score = None; content_text = text_with_potential_score
     return score, content_text.strip()
 
 @st.cache_data(max_entries=20, ttl=1800, show_spinner=False)
@@ -351,24 +240,9 @@ def generate_consolidated_summary(
     """
     Generates a consolidated summary with a narrative part and a TLDR section.
     The narrative is plain text. The TLDR section uses dash-prefixed key points.
-
-    Args:
-        summaries: Tuple of strings (individual LLM outputs).
-        topic_context: General topic, used if a general summary is generated.
-        api_key: The LLM API key.
-        model_name: The LLM model to use.
-        max_input_chars: Max combined characters of input texts for the LLM.
-        extraction_query_for_consolidation: Optional primary query (Q1) to focus on.
-        secondary_query_for_enrichment: Optional secondary query (Q2) to enrich the Q1 focus.
-
-    Returns:
-        A string containing the narrative summary followed by a TLDR section,
-        or an informational/error message.
     """
-    if not summaries:
-        return "LLM_PROCESSOR: No individual LLM outputs provided for consolidation."
-    if not configure_gemini(api_key):
-        return "LLM_PROCESSOR Error: Gemini not configured for consolidated summary."
+    if not summaries: return "LLM_PROCESSOR: No individual LLM outputs provided for consolidation."
+    if not configure_gemini(api_key): return "LLM_PROCESSOR Error: Gemini not configured for consolidated summary."
 
     texts_for_llm_input: List[str] = []
     is_primary_focused_consolidation_active = bool(extraction_query_for_consolidation and extraction_query_for_consolidation.strip())
@@ -400,14 +274,12 @@ def generate_consolidated_summary(
         "This means no markdown formatting like bolding, italics, headers, or lists using '*', '#', etc. "
         "Paragraphs should be separated by a single newline character."
     )
-
     tldr_specific_instruction = (
         "\n\nAfter completing the comprehensive narrative overview, create a distinct section titled 'TLDR:'. "
         "Under this 'TLDR:' title, list the 3-5 most critical key points from your narrative summary. "
         "Each key point MUST start on a new line and be prefixed with a dash and a single space (e.g., '- This is a key point.'). "
         "Ensure there is a clear visual separation (like one or two blank lines, or '---' on its own line) before the 'TLDR:' title."
     )
-    
     final_tldr_emphasis = "\n\nIMPORTANT FINAL STEP: You absolutely MUST include the 'TLDR:' section as described, with dash-prefixed key points, after the main narrative."
 
     if is_primary_focused_consolidation_active:
@@ -419,7 +291,6 @@ def generate_consolidated_summary(
                 f"Where relevant, integrate these secondary insights to enrich the primary overview on '{central_query_text}', "
                 f"adding nuance and depth, especially where they complement or expand upon the primary findings."
             )
-
         prompt_instruction = (
             f"You are an expert research analyst. Based on the provided text snippets (which are LLM extraction results, possibly including 'Relevancy Score' lines that you should ignore for summarization), "
             f"your primary task is to synthesize a detailed and comprehensive consolidated **narrative overview**. This narrative should deeply explore insights related to the central query: '{central_query_text}'.{enrichment_instruction_text}\n"
@@ -448,19 +319,79 @@ def generate_consolidated_summary(
         max_tokens_for_call = 1024
 
     prompt = (f"{prompt_instruction}--- PROVIDED TEXTS START ---\n{truncated_combined_text}\n--- PROVIDED TEXTS END ---\n\nConsolidated Overview and TLDR (focused on '{final_topic_context_for_prompt}' if applicable):")
-
     result_prefix = ""
-    if not is_primary_focused_consolidation_active:
-        result_prefix = "LLM_PROCESSOR_INFO: General overview as follows.\n"
+    if not is_primary_focused_consolidation_active: result_prefix = "LLM_PROCESSOR_INFO: General overview as follows.\n"
 
-    llm_response = _call_gemini_api(
-        model_name,
-        [prompt],
-        generation_config_args={"max_output_tokens": max_tokens_for_call, "temperature": 0.35}
-    )
+    llm_response = _call_gemini_api(model_name, [prompt], generation_config_args={"max_output_tokens": max_tokens_for_call, "temperature": 0.35})
+
     if llm_response and not llm_response.lower().startswith("llm error") and not llm_response.lower().startswith("llm_processor error"):
-        if "TLDR:" not in llm_response: # Check for the presence of the TLDR section title
-            print("LLM_PROCESSOR_WARNING: Consolidated summary generated, but 'TLDR:' section seems to be missing from LLM output.")
+        if "TLDR:" in llm_response:
+            parts = llm_response.split("TLDR:", 1)
+            if len(parts) == 2:
+                narrative_part = parts[0]
+                tldr_part = parts[1].strip() # Strip whitespace around the TLDR content
+                
+                # Split the TLDR part by " - " but handle the case where the first part of the split might be empty
+                # if the TLDR content starts immediately with " - ".
+                tldr_points_raw = tldr_part.split(" - ")
+                
+                formatted_tldr_items = []
+                if tldr_points_raw:
+                    # The first element in tldr_points_raw is whatever came *before* the first " - "
+                    # or the whole string if " - " wasn't found (though unlikely given the split).
+                    # If tldr_points_raw[0] is not empty, it might be an intro to the list or just spacing.
+                    # We want to preserve any text before the first actual point.
+                    
+                    first_segment = tldr_points_raw[0].strip()
+                    if first_segment: # If there's text before the first " - " or if no " - " at all.
+                        # This might be a single line TLDR without dashes, or an intro.
+                        # If we expect dashes, this part is tricky.
+                        # Let's assume if " - " is used, it's for list items.
+                        # If no " - " in tldr_part, tldr_points_raw will have one element: tldr_part itself.
+                        # So, we simply add it, and if it needs to be dashed, the prompt should have guided that.
+                        pass # This part becomes complex if the LLM *doesn't* use dashes.
+                             # The goal is to format what it *does* give with dashes.
+
+                    # Process segments that should be dash-prefixed points
+                    # If tldr_part was " - point1 - point2", tldr_points_raw would be ["", "point1", "point2"]
+                    # If tldr_part was "intro - point1", tldr_points_raw would be ["intro", "point1"]
+                    
+                    actual_points = []
+                    if tldr_part.startswith("-") or tldr_part.startswith(" -"): # Started with a dash
+                        for point_text in tldr_points_raw:
+                            if point_text.strip(): # Ignore empty strings from multiple " - "
+                                actual_points.append("- " + point_text.strip())
+                    elif tldr_points_raw[0].strip() and len(tldr_points_raw) > 1 : # Text, then dashes
+                        actual_points.append(tldr_points_raw[0].strip()) # keep the intro
+                        for point_text in tldr_points_raw[1:]:
+                            if point_text.strip():
+                                actual_points.append("- " + point_text.strip())
+                    elif tldr_points_raw[0].strip(): # Only one segment, no dashes.
+                         actual_points.append(tldr_points_raw[0].strip())
+
+
+                    if actual_points:
+                        # If the first actual point wasn't the intro and doesn't start with a dash, add it.
+                        # This logic is getting complicated due to anticipating LLM output variations.
+                        # A simpler regex replace might be better if the pattern is consistent.
+                        # Let's try a regex approach for inserting newlines before dashes.
+                        
+                        # Regex to find " - " that is not at the beginning of a line (after stripping tldr_part)
+                        # and insert a newline before it.
+                        # (?<=\S) ensures there's a non-whitespace character before " - " to avoid adding newline at start.
+                        tldr_part_formatted = re.sub(r'(?<=\S)( +- +)', r'\n\1', tldr_part)
+                        # Ensure the very first dash also starts on a new line if tldr_part starts with it.
+                        if tldr_part_formatted.startswith(" -"):
+                            tldr_part_formatted = tldr_part_formatted[1:].strip() # remove leading space if any
+                            tldr_part_formatted = "- " + tldr_part_formatted
+                        
+                        llm_response = narrative_part.rstrip() + "\n\nTLDR:\n" + tldr_part_formatted.strip()
+                    else: # No " - " found, just use the stripped tldr_part
+                        llm_response = narrative_part.rstrip() + "\n\nTLDR:\n" + tldr_part
+                else: # len(parts) != 2, means "TLDR:" wasn't found as expected or split weirdly
+                    print("LLM_PROCESSOR_WARNING: 'TLDR:' found, but splitting logic failed. Raw response returned.")
+        else:
+            print("LLM_PROCESSOR_WARNING: Consolidated summary generated, but 'TLDR:' section title seems to be missing from LLM output.")
         return result_prefix + llm_response
     return llm_response
 
@@ -474,30 +405,10 @@ def generate_search_queries(
     model_name: str = "models/gemini-1.5-flash-latest",
     max_input_chars: int = 2500
 ) -> Optional[List[str]]:
-    """
-    Generates new search queries based on original keywords and specific information goals (Q1 and Q2).
-    Output queries are plain text, one per line.
-
-    Args:
-        original_keywords: Tuple[str, ...]: Initial keywords from the user.
-        specific_info_query: Optional[str]: The primary specific information goal (Main Query 1).
-        specific_info_query_2: Optional[str]: The secondary specific information goal (Main Query 2).
-        num_queries_to_generate: int: The exact number of new search queries to generate.
-        api_key: Optional[str]: The Google Gemini API key.
-        model_name: str: The Gemini model to use.
-        max_input_chars: int: Max characters of the context (keywords + Q1 + Q2) for the LLM.
-
-    Returns:
-        Optional[List[str]]: A list of generated search query strings.
-    """
-    if not original_keywords:
-        return None
-    if num_queries_to_generate <= 0:
-        return []
-    if not configure_gemini(api_key):
-        print("LLM_PROCESSOR Warning: Gemini not configured for generating search queries.")
-        return None
-
+    """Generates new search queries."""
+    if not original_keywords: return None
+    if num_queries_to_generate <= 0: return []
+    if not configure_gemini(api_key): print("LLM_PROCESSOR Warning: Gemini not configured for generating search queries."); return None
     original_keywords_str = ", ".join(original_keywords)
     context_lines = [f"Original user search keywords: \"{original_keywords_str}\"."]
     has_q1 = specific_info_query and specific_info_query.strip()
@@ -505,7 +416,6 @@ def generate_search_queries(
     if has_q1: context_lines.append(f"User's primary information goal (Query 1): \"{specific_info_query.strip()}\".")
     if has_q2: context_lines.append(f"User's secondary information goal (Query 2): \"{specific_info_query_2.strip()}\".")
     if not has_q1 and not has_q2: context_lines.append("User has not provided any specific information goals beyond initial keywords.")
-
     context_for_llm = "\n".join(context_lines)
     truncated_context = _truncate_text_for_gemini(context_for_llm, model_name, max_input_chars)
     prompt = (
@@ -529,12 +439,11 @@ def generate_search_queries(
         return generated_queries[:num_queries_to_generate]
     print(f"LLM_PROCESSOR Warning: Failed to generate search queries or error occurred. Response: {response_text}"); return None
 
-
 if __name__ == '__main__':
     st.set_page_config(layout="wide")
-    st.title("LLM Processor Module Test (Google Gemini v1.9.6a - Narrative + TLDR Consolidation)")
-    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="main_api_key_test_llm_v196a")
-    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="main_model_name_test_llm_v196a")
+    st.title("LLM Processor Module Test (Google Gemini v1.9.7 - Narrative + TLDR Consolidation)")
+    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="main_api_key_test_llm_v197")
+    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="main_model_name_test_llm_v197")
     configured_for_test = False
     if GEMINI_API_KEY_TEST:
         if configure_gemini(GEMINI_API_KEY_TEST, force_recheck_models=True):
@@ -546,11 +455,11 @@ if __name__ == '__main__':
 
     if configured_for_test:
         with st.expander("Test Generate Search Queries (Cached)", expanded=False):
-            test_original_keywords_str_gsq = st.text_input("Original Keywords (comma-separated):", "home office setup, ergonomic chair", key="test_orig_kw_gsq_v196a")
-            test_specific_info_query_gsq = st.text_input("Specific Info Goal (Q1 - Optional):", "best chair for back pain under $300", key="test_spec_info_q1_gsq_v196a")
-            test_specific_info_query_2_gsq = st.text_input("Specific Info Goal (Q2 - Optional):", "desk height for standing", key="test_spec_info_q2_gsq_v196a")
-            test_num_queries_to_gen_gsq = st.number_input("Number of New Queries to Generate:", min_value=1, max_value=10, value=2, key="test_num_q_gen_gsq_v196a")
-            if st.button("Test Query Generation (Cached)", key="test_query_gen_button_gsq_v196a"):
+            test_original_keywords_str_gsq = st.text_input("Original Keywords (comma-separated):", "home office setup, ergonomic chair", key="test_orig_kw_gsq_v197")
+            test_specific_info_query_gsq = st.text_input("Specific Info Goal (Q1 - Optional):", "best chair for back pain under $300", key="test_spec_info_q1_gsq_v197")
+            test_specific_info_query_2_gsq = st.text_input("Specific Info Goal (Q2 - Optional):", "desk height for standing", key="test_spec_info_q2_gsq_v197")
+            test_num_queries_to_gen_gsq = st.number_input("Number of New Queries to Generate:", min_value=1, max_value=10, value=2, key="test_num_q_gen_gsq_v197")
+            if st.button("Test Query Generation (Cached)", key="test_query_gen_button_gsq_v197"):
                 test_original_keywords_tuple = tuple(k.strip() for k in test_original_keywords_str_gsq.split(',') if k.strip())
                 if not test_original_keywords_tuple: st.warning("Please enter original keywords.")
                 else:
@@ -567,56 +476,54 @@ if __name__ == '__main__':
                     else: st.write("No new queries generated or error.")
 
         with st.expander("Test Individual Summary (Cached)", expanded=False):
-            sample_text_summary_cached = st.text_area("Sample Text for Summary:", "The Eiffel Tower is a famous landmark in Paris, France.", height=100, key="test_sample_summary_text_v196a_cached")
-            if st.button("Test Summary Generation (Cached)", key="test_summary_gen_button_v196a_cached"):
+            sample_text_summary_cached = st.text_area("Sample Text for Summary:", "The Eiffel Tower is a famous landmark in Paris, France.", height=100, key="test_sample_summary_text_v197_cached")
+            if st.button("Test Summary Generation (Cached)", key="test_summary_gen_button_v197_cached"):
                  with st.spinner(f"Generating summary..."):
                     summary_output = generate_summary(sample_text_summary_cached, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
                  st.markdown("**Generated Summary (Plain Text Expected):**"); st.text(summary_output)
 
-
         with st.expander("Test Specific Information Extraction (Cached)", expanded=False):
-            sample_text_extraction_cached = st.text_area("Sample Text for Extraction:", "The main product is X and it costs $50. Contact sales@example.com for more.", height=100, key="test_sample_extraction_text_v196a_cached")
-            extraction_query_test_cached = st.text_input("Extraction Query:", "product name and contact email", key="test_extraction_query_input_v196a_cached")
-            if st.button("Test Extraction & Relevancy Scoring (Cached)", key="test_extraction_score_button_v196a_cached"):
+            sample_text_extraction_cached = st.text_area("Sample Text for Extraction:", "The main product is X and it costs $50. Contact sales@example.com for more.", height=100, key="test_sample_extraction_text_v197_cached")
+            extraction_query_test_cached = st.text_input("Extraction Query:", "product name and contact email", key="test_extraction_query_input_v197_cached")
+            if st.button("Test Extraction & Relevancy Scoring (Cached)", key="test_extraction_score_button_v197_cached"):
                 if not extraction_query_test_cached: st.warning("Please enter an extraction query.")
                 else:
                     with st.spinner(f"Extracting info..."):
                         extraction_output = extract_specific_information(sample_text_extraction_cached, extraction_query_test_cached, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
                     st.markdown("**Extraction Output (Score + Plain Text Content Expected):**"); st.text(extraction_output)
 
-
-        st.subheader("Consolidated Summary Test Area (v1.9.6a - Narrative + TLDR)")
+        st.subheader("Consolidated Summary Test Area (v1.9.7 - Narrative + TLDR)")
         with st.expander("Test Consolidation (Narrative + TLDR)", expanded=True):
-            st.write("Input texts. The LLM will attempt a narrative summary (plain text) followed by a 'TLDR:' section with dash-prefixed key points.")
-            cs_text1_v196a = st.text_area("Text 1 (e.g., High-score Q1 output):", "Relevancy Score: 4/5\nSolar panel efficiency research focuses on perovskite materials, showing promise. Current generation polysilicon panels have an average annual degradation rate of approximately 0.5%.", height=100, key="cs_text1_v196a")
-            cs_text2_v196a = st.text_area("Text 2 (e.g., High-score Q2 output):", "Relevancy Score: 3/5\nSolar inverters are crucial for system performance and typically last 10-15 years. Maintenance of inverters can contribute significantly to the long-term cost of a solar installation.", height=100, key="cs_text2_v196a")
-            cs_text3_v196a = st.text_area("Text 3 (e.g., General summary):", "Summary: Wind energy is another important renewable source. It has different siting requirements and environmental considerations compared to solar power. Offshore wind is gaining traction.", height=100, key="cs_text3_v196a")
+            st.write("Input texts. The LLM will attempt a narrative summary (plain text) followed by a 'TLDR:' section with dash-prefixed key points. Post-processing attempts to format TLDR points onto new lines.")
+            cs_text1_v197 = st.text_area("Text 1 (e.g., High-score Q1 output):", "Relevancy Score: 4/5\nSolar panel efficiency research focuses on perovskite materials, showing promise. Current generation polysilicon panels have an average annual degradation rate of approximately 0.5%.", height=100, key="cs_text1_v197")
+            cs_text2_v197 = st.text_area("Text 2 (e.g., High-score Q2 output):", "Relevancy Score: 3/5\nSolar inverters are crucial for system performance and typically last 10-15 years. Maintenance of inverters can contribute significantly to the long-term cost of a solar installation.", height=100, key="cs_text2_v197")
+            cs_text3_v197 = st.text_area("Text 3 (e.g., General summary):", "Summary: Wind energy is another important renewable source. It has different siting requirements and environmental considerations compared to solar power. Offshore wind is gaining traction.", height=100, key="cs_text3_v197")
 
-            cs_topic_v196a = st.text_input("General Topic Context (for general summary):", "Renewable Energy Technologies", key="cs_topic_v196a")
-            cs_q1_v196a = st.text_input("Q1 for Consolidation (Primary Focus):", "key aspects of solar panel technology and performance", key="cs_q1_v196a")
-            cs_q2_v196a = st.text_input("Q2 for Enrichment (Secondary Context):", "long-term considerations for solar energy systems", key="cs_q2_v196a")
+            cs_topic_v197 = st.text_input("General Topic Context (for general summary):", "Renewable Energy Technologies", key="cs_topic_v197")
+            cs_q1_v197 = st.text_input("Q1 for Consolidation (Primary Focus):", "key aspects of solar panel technology and performance", key="cs_q1_v197")
+            cs_q2_v197 = st.text_input("Q2 for Enrichment (Secondary Context):", "long-term considerations for solar energy systems", key="cs_q2_v197")
 
-            if st.button("Test Focused Consolidation (Narrative + TLDR)", key="focused_cs_button_v196a"):
-                if not cs_q1_v196a: st.warning("Please enter Q1 for primary focus.")
+            if st.button("Test Focused Consolidation (Narrative + TLDR)", key="focused_cs_button_v197"):
+                if not cs_q1_v197: st.warning("Please enter Q1 for primary focus.")
                 else:
-                    texts_cs = tuple(t for t in [cs_text1_v196a, cs_text2_v196a, cs_text3_v196a] if t and t.strip())
+                    texts_cs = tuple(t for t in [cs_text1_v197, cs_text2_v197, cs_text3_v197] if t and t.strip())
                     if not texts_cs: st.warning("Please provide at least one text for consolidation.")
                     else:
                         with st.spinner("Generating focused consolidated summary (narrative + TLDR)..."):
                             output = generate_consolidated_summary(
-                                summaries=texts_cs, topic_context=cs_topic_v196a,
+                                summaries=texts_cs, topic_context=cs_topic_v197,
                                 api_key=GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST,
-                                extraction_query_for_consolidation=cs_q1_v196a.strip(),
-                                secondary_query_for_enrichment=cs_q2_v196a.strip() if cs_q2_v196a.strip() else None )
+                                extraction_query_for_consolidation=cs_q1_v197.strip(),
+                                secondary_query_for_enrichment=cs_q2_v197.strip() if cs_q2_v197.strip() else None )
                         st.markdown("**Consolidated Output (Focused Narrative + TLDR):**"); st.markdown(output)
 
-            if st.button("Test General Consolidation (Narrative + TLDR)", key="general_cs_button_v196a"):
-                texts_cs = tuple(t for t in [cs_text1_v196a, cs_text2_v196a, cs_text3_v196a] if t and t.strip())
+            if st.button("Test General Consolidation (Narrative + TLDR)", key="general_cs_button_v197"):
+                texts_cs = tuple(t for t in [cs_text1_v197, cs_text2_v197, cs_text3_v197] if t and t.strip())
                 if not texts_cs: st.warning("Please provide at least one text for consolidation.")
                 else:
                     with st.spinner("Generating general consolidated summary (narrative + TLDR)..."):
                          output = generate_consolidated_summary(
-                            summaries=texts_cs, topic_context=cs_topic_v196a,
+                            summaries=texts_cs, topic_context=cs_topic_v197,
                             api_key=GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST,
                             extraction_query_for_consolidation=None, secondary_query_for_enrichment=None)
                     st.markdown("**Consolidated Output (General Narrative + TLDR):**"); st.markdown(output)
