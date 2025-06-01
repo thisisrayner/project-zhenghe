@@ -289,7 +289,7 @@ Generates new search queries.
 ## File: modules/ui_manager.py
 Module Docstring:
 ```text
-Manages the Streamlit User Interface elements, layout, and user inputs.
+Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
 ```
 
 ### def sanitize_text_for_markdown(text: Optional[str]) -> str
@@ -318,8 +318,8 @@ Docstring:
 ### def display_consolidated_summary_and_sources(summary_text: Optional[str], focused_sources: Optional[List[Dict[str, Any]]], last_extract_queries: List[str]) -> None
 Docstring:
 ```text
-Displays the consolidated summary. If focused, also shows sources.
-Allows intended Markdown (like TLDR lists) from summary_text to render.
+Displays the consolidated summary using st.code() for copy functionality,
+and, if applicable, the sources used for a focused summary.
 ```
 
 ### def display_individual_results()
