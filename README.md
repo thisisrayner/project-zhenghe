@@ -158,9 +158,3 @@ Adherence to these guidelines is crucial for maintaining clarity, ensuring the p
 Future API Layer Plan
 
 The modular design supports future API development (e.g., using FastAPI or Flask) for programmatic access and integration with other tools. This could involve creating endpoints that accept keywords and parameters, returning structured JSON results for D.O.R.A's analyses.
-Contributing
-
-[Details on how to contribute to the project, if applicable.]
-License
-
-[Specify the license for your project, e.g., MIT License, Apache 2.0 License.]
