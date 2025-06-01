@@ -1,39 +1,30 @@
 # app.py
+# Version 3.1.2:
+# - Rebranded UI to "D.O.R.A - The research agent for domain-wide overview and insights".
+# - Updated page title, main title, subtitle, caption, and download filenames.
 # Version 3.1.1:
 # - Displays sources used for focused consolidated summaries.
 # - Handles new return value from process_manager.
-# Version 3.1.0: Integrated support for two distinct LLM extraction queries.
-# Main app orchestrates calls to new modules: ui_manager, process_manager, excel_handler.
-# Retains session state management, config loading, and GSheets setup.
 """
-Streamlit Web Application for the Keyword Search & Analysis Tool (KSAT).
+Streamlit Web Application for D.O.R.A - The Research Agent.
 
-This module serves as the main entry point and orchestrator for the KSAT application.
+This module serves as the main entry point and orchestrator for the D.O.R.A application.
 It is responsible for:
 1.  Setting up the Streamlit page configuration.
-2.  Loading application configurations from `secrets.toml` via the `config` module.
-3.  Initializing and managing Streamlit session state for persistent data across reruns.
-4.  Establishing and managing the connection to Google Sheets for data storage,
-    including header validation, via the `data_storage` module.
-5.  Rendering the main user interface, including the title and sidebar for user inputs,
-    by calling the `ui_manager` module.
-6.  Triggering the core search, scrape, LLM processing, and analysis workflow
-    (managed by `process_manager.py`) when the user initiates a search.
-7.  Receiving results from the `process_manager` and updating the session state,
-    including details about sources for focused consolidated summaries.
-8.  Displaying the consolidated overview, its sources (if focused), individual item results,
-    and processing logs using the `ui_manager`.
-9.  Handling the generation and download of results as an Excel file via the
-    `excel_handler` module.
+# ... (rest of docstring can remain largely the same, or update "KSAT" to "D.O.R.A" if desired for consistency, though you mentioned only UI)
 """
 
 import streamlit as st
 from modules import config, data_storage, ui_manager, process_manager, excel_handler
 import time
-from typing import Dict, Any, Optional, List # process_manager.FocusedSummarySource won't be directly used here
+from typing import Dict, Any, Optional, List
 
 # --- Page Configuration ---
-st.set_page_config(page_title="Keyword Search & Analysis Tool (KSAT)", page_icon="🔮", layout="wide")
+st.set_page_config(
+    page_title="D.O.R.A - The Research Agent", # MODIFIED
+    page_icon="🔮",
+    layout="wide"
+)
 
 # --- Load Application Configuration ---
 cfg: Optional[config.AppConfig] = config.load_config()
@@ -48,7 +39,7 @@ default_session_state: Dict[str, Any] = {
     'last_keywords': "",
     'last_extract_queries': ["", ""],
     'consolidated_summary_text': None,
-    'focused_summary_sources': [], # NEW: For storing details of texts used in focused summary
+    'focused_summary_sources': [],
     'gs_worksheet': None,
     'sheet_writing_enabled': False,
     'sheet_connection_attempted_this_session': False,
@@ -86,8 +77,8 @@ if not st.session_state.sheet_connection_attempted_this_session:
 
 
 # --- UI Rendering ---
-st.title("Keyword Search & Analysis Tool (KSAT) 🔮")
-st.markdown("Enter keywords, configure options, and let the tool gather insights for you.")
+st.title("D.O.R.A 🔮") # MODIFIED
+st.markdown("D.O.R.A - The **research** **agent** for **domain**-wide **overview** and insights.") # MODIFIED
 
 keywords_input, num_results, llm_extract_queries_list, start_button = ui_manager.render_sidebar(
     cfg,
@@ -104,7 +95,7 @@ if start_button:
     st.session_state.processing_log = ["Processing initiated..."]
     st.session_state.results_data = []
     st.session_state.consolidated_summary_text = None
-    st.session_state.focused_summary_sources = [] # Reset sources
+    st.session_state.focused_summary_sources = []
     st.session_state.initial_keywords_for_display = set()
     st.session_state.llm_generated_keywords_set_for_display = set()
 
@@ -113,7 +104,6 @@ if start_button:
 
     active_llm_extract_queries = [q for q in llm_extract_queries_list if q.strip()]
 
-    # MODIFIED: Unpack the new focused_summary_sources return value
     log, data, summary, initial_kws_display, llm_kws_display, focused_sources = process_manager.run_search_and_analysis(
         app_config=cfg,
         keywords_input=keywords_input,
@@ -127,7 +117,7 @@ if start_button:
     st.session_state.processing_log = log
     st.session_state.results_data = data
     st.session_state.consolidated_summary_text = summary
-    st.session_state.focused_summary_sources = focused_sources # Store the new data
+    st.session_state.focused_summary_sources = focused_sources
     st.session_state.initial_keywords_for_display = initial_kws_display
     st.session_state.llm_generated_keywords_set_for_display = llm_kws_display
 
@@ -155,24 +145,24 @@ with results_container:
         st.download_button(
             label="📥 Download Results as Excel",
             data=excel_file_bytes,
-            file_name=f"ksat_results_{time.strftime('%Y%m%d-%H%M%S')}.xlsx",
+            file_name=f"dora_results_{time.strftime('%Y%m%d-%H%M%S')}.xlsx", # MODIFIED
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             key="download_excel_button"
         )
 
-    # MODIFIED: Call the new UI manager function to display summary and its sources
     ui_manager.display_consolidated_summary_and_sources(
         st.session_state.consolidated_summary_text,
-        st.session_state.focused_summary_sources, # Pass the new data
-        st.session_state.last_extract_queries # Needed to determine if focused summary was attempted
+        st.session_state.focused_summary_sources,
+        st.session_state.last_extract_queries
     )
-    ui_manager.display_individual_results() # Existing function
+    ui_manager.display_individual_results()
 
 with log_container:
     ui_manager.display_processing_log()
 
 st.markdown("---")
-st.caption(f"Keyword Search & Analysis Tool (KSAT) v{config.APP_VERSION} (Focused Summary Sources)") # Assuming APP_VERSION is defined in config or use literal
+# Assuming config.APP_VERSION is set to "3.1.2" or reflects the current version
+st.caption(f"D.O.R.A v{config.APP_VERSION} - The Research Agent") # MODIFIED
 
 # end of app.py
