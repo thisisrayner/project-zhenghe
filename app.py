@@ -1,17 +1,14 @@
 # app.py
 # Version 3.1.2:
-# - Rebranded UI to "D.O.R.A - The research agent for domain-wide overview and insights".
-# - Updated page title, main title, subtitle, caption, and download filenames.
+# - Rebranded UI to "D.O.R.A".
+# - Updated page title, main title, subtitle, caption, and download filenames per new branding.
+# - Final subtitle capitalization and bolding corrections.
 # Version 3.1.1:
 # - Displays sources used for focused consolidated summaries.
 # - Handles new return value from process_manager.
 """
 Streamlit Web Application for D.O.R.A - The Research Agent.
-
-This module serves as the main entry point and orchestrator for the D.O.R.A application.
-It is responsible for:
-1.  Setting up the Streamlit page configuration.
-# ... (rest of docstring can remain largely the same, or update "KSAT" to "D.O.R.A" if desired for consistency, though you mentioned only UI)
+...
 """
 
 import streamlit as st
@@ -21,7 +18,7 @@ from typing import Dict, Any, Optional, List
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="D.O.R.A - The Research Agent", # MODIFIED
+    page_title="D.O.R.A - The Research Agent",
     page_icon="🔮",
     layout="wide"
 )
@@ -33,6 +30,7 @@ if not cfg:
     st.stop()
 
 # --- Session State Initialization ---
+# (Session state remains the same)
 default_session_state: Dict[str, Any] = {
     'processing_log': [],
     'results_data': [],
@@ -52,6 +50,7 @@ for key, default_value in default_session_state.items():
         st.session_state[key] = default_value
 
 # --- Google Sheets Setup ---
+# (Google Sheets setup remains the same)
 gsheets_secrets_present = bool(cfg.gsheets.service_account_info and \
                            (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name))
 
@@ -77,8 +76,8 @@ if not st.session_state.sheet_connection_attempted_this_session:
 
 
 # --- UI Rendering ---
-st.title("D.O.R.A 🔮") # MODIFIED
-st.markdown("D.O.R.A - The **research** **agent** for **domain**-wide **overview** and insights.") # MODIFIED
+st.title("D.O.R.A 🔮")
+st.markdown("The **Research** **Agent** For **Domain**-Wide **Overview** and Insights.") # MODIFIED: "Insights" no longer bold.
 
 keywords_input, num_results, llm_extract_queries_list, start_button = ui_manager.render_sidebar(
     cfg,
@@ -91,6 +90,7 @@ results_container = st.container()
 log_container = st.container()
 
 # --- Main Processing Logic ---
+# (Main processing logic remains the same)
 if start_button:
     st.session_state.processing_log = ["Processing initiated..."]
     st.session_state.results_data = []
@@ -122,6 +122,7 @@ if start_button:
     st.session_state.llm_generated_keywords_set_for_display = llm_kws_display
 
 # --- Display Results and Logs ---
+# (Display logic for results and logs remains the same)
 with results_container:
     if st.session_state.results_data:
         st.markdown("---")
@@ -145,7 +146,7 @@ with results_container:
         st.download_button(
             label="📥 Download Results as Excel",
             data=excel_file_bytes,
-            file_name=f"dora_results_{time.strftime('%Y%m%d-%H%M%S')}.xlsx", # MODIFIED
+            file_name=f"dora_results_{time.strftime('%Y%m%d-%H%M%S')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             key="download_excel_button"
@@ -162,7 +163,6 @@ with log_container:
     ui_manager.display_processing_log()
 
 st.markdown("---")
-# Assuming config.APP_VERSION is set to "3.1.2" or reflects the current version
-st.caption(f"D.O.R.A v{config.APP_VERSION} - The Research Agent") # MODIFIED
+st.caption(f"D.O.R.A v{config.APP_VERSION}")
 
 # end of app.py
