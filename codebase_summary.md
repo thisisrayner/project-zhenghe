@@ -209,7 +209,8 @@ and providing functionalities such as:
 - Generating summaries of text content.
 - Extracting specific information based on user queries and providing relevancy scores.
 - Generating consolidated overviews from multiple text snippets. The overview consists
-  of a narrative part (plain text) followed by a "TLDR:" section with dash-bulleted key points.
+  of a narrative part (plain text with proper paragraph separation) followed by a
+  "TLDR:" section with dash-bulleted key points.
   This can be a general overview or focused on a specific query (Q1) with potential
   enrichment from a secondary query (Q2).
 - Generating alternative search queries based on initial keywords and user goals (Q1 and Q2).
@@ -273,8 +274,8 @@ Parses score and extracts content.
 Docstring:
 ```text
 Generates a consolidated summary with a narrative part and a TLDR section.
-The narrative is plain text. The TLDR section uses dash-prefixed key points,
-with post-processing to attempt to enforce newlines for each point.
+Narrative is plain text with paragraphs separated by blank lines.
+TLDR section uses dash-prefixed key points, each on a new line.
 ```
 
 ### def generate_search_queries(original_keywords: Tuple[str, ...], specific_info_query: Optional[str], specific_info_query_2: Optional[str], num_queries_to_generate: int, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 2500) -> Optional[List[str]]
