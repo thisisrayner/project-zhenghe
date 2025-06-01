@@ -1,9 +1,11 @@
 # modules/llm_processor.py
-# Version 1.9.7:
-# - Corrected and simplified post-processing logic in `generate_consolidated_summary`
-#   to reliably format dash-prefixed TL;DR points onto new lines.
+# Version 1.9.8:
+# - Improved post-processing in `generate_consolidated_summary` for TL;DR
+#   to better handle LLM variations and ensure each point is on a new line with a dash.
+# Version 1.9.7: 
+# - (Previous attempt at TLDR post-processing)
 # Version 1.9.6a:
-# - Attempt to make TL;DR instruction more prominent in `generate_consolidated_summary` prompt.
+# - Attempt to make TL;DR instruction more prominent.
 # Version 1.9.6:
 # - Modified `generate_consolidated_summary` prompt for narrative + dash-bulleted TLDR.
 # Version 1.9.5:
@@ -239,7 +241,8 @@ def generate_consolidated_summary(
 ) -> Optional[str]:
     """
     Generates a consolidated summary with a narrative part and a TLDR section.
-    The narrative is plain text. The TLDR section uses dash-prefixed key points.
+    The narrative is plain text. The TLDR section uses dash-prefixed key points,
+    with post-processing to attempt to enforce newlines for each point.
     """
     if not summaries: return "LLM_PROCESSOR: No individual LLM outputs provided for consolidation."
     if not configure_gemini(api_key): return "LLM_PROCESSOR Error: Gemini not configured for consolidated summary."
@@ -333,42 +336,37 @@ def generate_consolidated_summary(
                 tldr_content_raw = parts[1].strip()
 
             if tldr_content_raw:
-                # Replace occurrences of " - " (dash surrounded by spaces) with "\n- "
-                # This ensures that each item intended as a bullet point starts on a new line.
-                # We also handle the case where a point might start with "- " (dash then space) at the beginning of the tldr_content_raw.
+                # Post-processing to format TLDR points
+                # Remove leading and trailing whitespace from the whole TLDR block
+                tldr_block = tldr_content_raw.strip()
                 
-                # Normalize by removing existing newlines specifically before a dash-space,
-                # then replace dash-space with newline-dash-space.
-                # This makes the replacement more idempotent if the LLM sometimes gets it right.
-                tldr_content_processed = tldr_content_raw.replace("\n- ", "- ") # Remove existing good newlines
-                tldr_content_processed = tldr_content_processed.replace("\n - ", "- ") # Remove existing good newlines with extra space
-
-                # Now, ensure all intended bullet points (starting with "- ") get a newline.
-                # Split by "- " and then rejoin with "\n- ", taking care of potential intro text.
+                # Split into potential points. LLM might use " - " or just "- " or "\n- "
+                # First, normalize newlines that might already exist before dashes.
+                tldr_block = re.sub(r'\n\s*-\s*', '@@POINT@@- ', tldr_block)
+                # Then, normalize dashes that are not at the start of a line (likely run-on points)
+                tldr_block = re.sub(r'(?<!\n)\s*-\s*(?!\s*-)', '@@POINT@@- ', tldr_block) # Negative lookahead for not another dash immediately
                 
-                tldr_points = []
-                # If tldr_content_processed starts with "- ", the first split element will be empty.
-                if tldr_content_processed.startswith("- "):
-                    split_items = tldr_content_processed.split("- ", 1) # Split only on the first occurrence
-                    if len(split_items) > 1 and split_items[1].strip():
-                         tldr_points.append("- " + split_items[1].strip().replace(" - ", "\n- "))
-                else: # May have intro text before the first dash
-                    first_dash_idx = tldr_content_processed.find(" - ")
-                    if first_dash_idx != -1:
-                        intro = tldr_content_processed[:first_dash_idx].strip()
-                        if intro:
-                            tldr_points.append(intro)
-                        # Process the rest
-                        rest_of_points = tldr_content_processed[first_dash_idx:].strip()
-                        if rest_of_points.startswith("- "):
-                             tldr_points.append(rest_of_points.replace(" - ", "\n- "))
-                        else: # Should not happen if find found " - "
-                             tldr_points.append(rest_of_points)
-                    else: # No " - " found, just use the content as is
-                        tldr_points.append(tldr_content_processed)
+                # If the block itself starts with a dash without a marker, add it
+                if tldr_block.startswith("- "):
+                    tldr_block = "@@POINT@@" + tldr_block
+                elif tldr_block.startswith(" - "):
+                     tldr_block = "@@POINT@@" + tldr_block[1:]
 
-                formatted_tldr = "\n".join(tldr_points)
-                llm_response = narrative_part + "\n\nTLDR:\n" + formatted_tldr.strip()
+
+                points = [p.strip() for p in tldr_block.split("@@POINT@@") if p.strip()]
+                
+                # Reconstruct the TLDR with each point on a new line, correctly prefixed
+                formatted_tldr_items = []
+                for point_text in points:
+                    if point_text.startswith("- "):
+                        formatted_tldr_items.append(point_text)
+                    else: # If it's a fragment before the first dash or some other text
+                        formatted_tldr_items.append("- " + point_text) # Add dash if missing, or handle as intro
+
+                if formatted_tldr_items:
+                    llm_response = narrative_part + "\n\nTLDR:\n" + "\n".join(formatted_tldr_items)
+                else: # Content after TLDR: was empty or only whitespace after processing
+                    llm_response = narrative_part + "\n\nTLDR:\n(No key points extracted or formatted)"
             else: # TLDR: was found but no content after it
                  llm_response = narrative_part + "\n\nTLDR:\n(No key points provided by LLM)"
         else:
@@ -423,9 +421,9 @@ def generate_search_queries(
 
 if __name__ == '__main__':
     st.set_page_config(layout="wide")
-    st.title("LLM Processor Module Test (Google Gemini v1.9.7 - Narrative + TLDR Consolidation)")
-    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="main_api_key_test_llm_v197")
-    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="main_model_name_test_llm_v197")
+    st.title("LLM Processor Module Test (Google Gemini v1.9.8 - Narrative + TLDR Consolidation)") # Updated version
+    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="main_api_key_test_llm_v198")
+    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="main_model_name_test_llm_v198")
     configured_for_test = False
     if GEMINI_API_KEY_TEST:
         if configure_gemini(GEMINI_API_KEY_TEST, force_recheck_models=True):
@@ -437,11 +435,11 @@ if __name__ == '__main__':
 
     if configured_for_test:
         with st.expander("Test Generate Search Queries (Cached)", expanded=False):
-            test_original_keywords_str_gsq = st.text_input("Original Keywords (comma-separated):", "home office setup, ergonomic chair", key="test_orig_kw_gsq_v197")
-            test_specific_info_query_gsq = st.text_input("Specific Info Goal (Q1 - Optional):", "best chair for back pain under $300", key="test_spec_info_q1_gsq_v197")
-            test_specific_info_query_2_gsq = st.text_input("Specific Info Goal (Q2 - Optional):", "desk height for standing", key="test_spec_info_q2_gsq_v197")
-            test_num_queries_to_gen_gsq = st.number_input("Number of New Queries to Generate:", min_value=1, max_value=10, value=2, key="test_num_q_gen_gsq_v197")
-            if st.button("Test Query Generation (Cached)", key="test_query_gen_button_gsq_v197"):
+            test_original_keywords_str_gsq = st.text_input("Original Keywords (comma-separated):", "home office setup, ergonomic chair", key="test_orig_kw_gsq_v198")
+            test_specific_info_query_gsq = st.text_input("Specific Info Goal (Q1 - Optional):", "best chair for back pain under $300", key="test_spec_info_q1_gsq_v198")
+            test_specific_info_query_2_gsq = st.text_input("Specific Info Goal (Q2 - Optional):", "desk height for standing", key="test_spec_info_q2_gsq_v198")
+            test_num_queries_to_gen_gsq = st.number_input("Number of New Queries to Generate:", min_value=1, max_value=10, value=2, key="test_num_q_gen_gsq_v198")
+            if st.button("Test Query Generation (Cached)", key="test_query_gen_button_gsq_v198"):
                 test_original_keywords_tuple = tuple(k.strip() for k in test_original_keywords_str_gsq.split(',') if k.strip())
                 if not test_original_keywords_tuple: st.warning("Please enter original keywords.")
                 else:
@@ -458,54 +456,54 @@ if __name__ == '__main__':
                     else: st.write("No new queries generated or error.")
 
         with st.expander("Test Individual Summary (Cached)", expanded=False):
-            sample_text_summary_cached = st.text_area("Sample Text for Summary:", "The Eiffel Tower is a famous landmark in Paris, France.", height=100, key="test_sample_summary_text_v197_cached")
-            if st.button("Test Summary Generation (Cached)", key="test_summary_gen_button_v197_cached"):
+            sample_text_summary_cached = st.text_area("Sample Text for Summary:", "The Eiffel Tower is a famous landmark in Paris, France.", height=100, key="test_sample_summary_text_v198_cached")
+            if st.button("Test Summary Generation (Cached)", key="test_summary_gen_button_v198_cached"):
                  with st.spinner(f"Generating summary..."):
                     summary_output = generate_summary(sample_text_summary_cached, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
                  st.markdown("**Generated Summary (Plain Text Expected):**"); st.text(summary_output)
 
         with st.expander("Test Specific Information Extraction (Cached)", expanded=False):
-            sample_text_extraction_cached = st.text_area("Sample Text for Extraction:", "The main product is X and it costs $50. Contact sales@example.com for more.", height=100, key="test_sample_extraction_text_v197_cached")
-            extraction_query_test_cached = st.text_input("Extraction Query:", "product name and contact email", key="test_extraction_query_input_v197_cached")
-            if st.button("Test Extraction & Relevancy Scoring (Cached)", key="test_extraction_score_button_v197_cached"):
+            sample_text_extraction_cached = st.text_area("Sample Text for Extraction:", "The main product is X and it costs $50. Contact sales@example.com for more.", height=100, key="test_sample_extraction_text_v198_cached")
+            extraction_query_test_cached = st.text_input("Extraction Query:", "product name and contact email", key="test_extraction_query_input_v198_cached")
+            if st.button("Test Extraction & Relevancy Scoring (Cached)", key="test_extraction_score_button_v198_cached"):
                 if not extraction_query_test_cached: st.warning("Please enter an extraction query.")
                 else:
                     with st.spinner(f"Extracting info..."):
                         extraction_output = extract_specific_information(sample_text_extraction_cached, extraction_query_test_cached, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
                     st.markdown("**Extraction Output (Score + Plain Text Content Expected):**"); st.text(extraction_output)
 
-        st.subheader("Consolidated Summary Test Area (v1.9.7 - Narrative + TLDR)")
+        st.subheader("Consolidated Summary Test Area (v1.9.8 - Narrative + TLDR)")
         with st.expander("Test Consolidation (Narrative + TLDR)", expanded=True):
             st.write("Input texts. The LLM will attempt a narrative summary (plain text) followed by a 'TLDR:' section with dash-prefixed key points. Post-processing attempts to format TLDR points onto new lines.")
-            cs_text1_v197 = st.text_area("Text 1 (e.g., High-score Q1 output):", "Relevancy Score: 4/5\nSolar panel efficiency research focuses on perovskite materials, showing promise. Current generation polysilicon panels have an average annual degradation rate of approximately 0.5%.", height=100, key="cs_text1_v197")
-            cs_text2_v197 = st.text_area("Text 2 (e.g., High-score Q2 output):", "Relevancy Score: 3/5\nSolar inverters are crucial for system performance and typically last 10-15 years. Maintenance of inverters can contribute significantly to the long-term cost of a solar installation.", height=100, key="cs_text2_v197")
-            cs_text3_v197 = st.text_area("Text 3 (e.g., General summary):", "Summary: Wind energy is another important renewable source. It has different siting requirements and environmental considerations compared to solar power. Offshore wind is gaining traction.", height=100, key="cs_text3_v197")
+            cs_text1_v198 = st.text_area("Text 1 (e.g., High-score Q1 output):", "Relevancy Score: 4/5\nSolar panel efficiency research focuses on perovskite materials, showing promise. Current generation polysilicon panels have an average annual degradation rate of approximately 0.5%.", height=100, key="cs_text1_v198")
+            cs_text2_v198 = st.text_area("Text 2 (e.g., High-score Q2 output):", "Relevancy Score: 3/5\nSolar inverters are crucial for system performance and typically last 10-15 years. Maintenance of inverters can contribute significantly to the long-term cost of a solar installation.", height=100, key="cs_text2_v198")
+            cs_text3_v198 = st.text_area("Text 3 (e.g., General summary):", "Summary: Wind energy is another important renewable source. It has different siting requirements and environmental considerations compared to solar power. Offshore wind is gaining traction.", height=100, key="cs_text3_v198")
 
-            cs_topic_v197 = st.text_input("General Topic Context (for general summary):", "Renewable Energy Technologies", key="cs_topic_v197")
-            cs_q1_v197 = st.text_input("Q1 for Consolidation (Primary Focus):", "key aspects of solar panel technology and performance", key="cs_q1_v197")
-            cs_q2_v197 = st.text_input("Q2 for Enrichment (Secondary Context):", "long-term considerations for solar energy systems", key="cs_q2_v197")
+            cs_topic_v198 = st.text_input("General Topic Context (for general summary):", "Renewable Energy Technologies", key="cs_topic_v198")
+            cs_q1_v198 = st.text_input("Q1 for Consolidation (Primary Focus):", "key aspects of solar panel technology and performance", key="cs_q1_v198")
+            cs_q2_v198 = st.text_input("Q2 for Enrichment (Secondary Context):", "long-term considerations for solar energy systems", key="cs_q2_v198")
 
-            if st.button("Test Focused Consolidation (Narrative + TLDR)", key="focused_cs_button_v197"):
-                if not cs_q1_v197: st.warning("Please enter Q1 for primary focus.")
+            if st.button("Test Focused Consolidation (Narrative + TLDR)", key="focused_cs_button_v198"):
+                if not cs_q1_v198: st.warning("Please enter Q1 for primary focus.")
                 else:
-                    texts_cs = tuple(t for t in [cs_text1_v197, cs_text2_v197, cs_text3_v197] if t and t.strip())
+                    texts_cs = tuple(t for t in [cs_text1_v198, cs_text2_v198, cs_text3_v198] if t and t.strip())
                     if not texts_cs: st.warning("Please provide at least one text for consolidation.")
                     else:
                         with st.spinner("Generating focused consolidated summary (narrative + TLDR)..."):
                             output = generate_consolidated_summary(
-                                summaries=texts_cs, topic_context=cs_topic_v197,
+                                summaries=texts_cs, topic_context=cs_topic_v198,
                                 api_key=GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST,
-                                extraction_query_for_consolidation=cs_q1_v197.strip(),
-                                secondary_query_for_enrichment=cs_q2_v197.strip() if cs_q2_v197.strip() else None )
+                                extraction_query_for_consolidation=cs_q1_v198.strip(),
+                                secondary_query_for_enrichment=cs_q2_v198.strip() if cs_q2_v198.strip() else None )
                         st.markdown("**Consolidated Output (Focused Narrative + TLDR):**"); st.markdown(output)
 
-            if st.button("Test General Consolidation (Narrative + TLDR)", key="general_cs_button_v197"):
-                texts_cs = tuple(t for t in [cs_text1_v197, cs_text2_v197, cs_text3_v197] if t and t.strip())
+            if st.button("Test General Consolidation (Narrative + TLDR)", key="general_cs_button_v198"):
+                texts_cs = tuple(t for t in [cs_text1_v198, cs_text2_v198, cs_text3_v198] if t and t.strip())
                 if not texts_cs: st.warning("Please provide at least one text for consolidation.")
                 else:
                     with st.spinner("Generating general consolidated summary (narrative + TLDR)..."):
                          output = generate_consolidated_summary(
-                            summaries=texts_cs, topic_context=cs_topic_v197,
+                            summaries=texts_cs, topic_context=cs_topic_v198,
                             api_key=GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST,
                             extraction_query_for_consolidation=None, secondary_query_for_enrichment=None)
                     st.markdown("**Consolidated Output (General Narrative + TLDR):**"); st.markdown(output)
