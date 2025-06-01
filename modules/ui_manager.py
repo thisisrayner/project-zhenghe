@@ -1,14 +1,17 @@
 # modules/ui_manager.py
+# Version 1.1.7:
+# - Changed display of consolidated summary to use st.code() for built-in copy
+#   functionality and to show literal dashes for TL;DR points.
+# - Removed sanitize_text_for_markdown application from the main consolidated summary
+#   as st.code() handles preformatted text. Sanitization still used for specific info/error prefixes.
 # Version 1.1.6:
-# - Removed sanitize_text_for_markdown from the main consolidated summary display
-#   to allow TL;DR list formatting (newlines and dashes) from llm_processor to render correctly.
-# - Sanitization is still applied to pure info/error messages from the LLM.
+# - (Previous attempt at TLDR list rendering by removing sanitizer from st.markdown)
 # Version 1.1.5:
 # - Renamed display_consolidated_summary to display_consolidated_summary_and_sources.
 # - Added display of sources for focused consolidated summaries if available.
 # - Function now accepts summary_text, focused_sources, and last_extract_queries as args.
 """
-Manages the Streamlit User Interface elements, layout, and user inputs.
+Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
 """
 
 import streamlit as st
@@ -17,6 +20,7 @@ from modules import config
 import re
 
 # --- Sanitization Helper ---
+# This is still useful for other text outputs, like metadata in individual results.
 def sanitize_text_for_markdown(text: Optional[str]) -> str:
     """
     Sanitizes text to prevent common markdown rendering issues, especially from LLM output.
@@ -25,10 +29,8 @@ def sanitize_text_for_markdown(text: Optional[str]) -> str:
     if text is None:
         return ""
     escaped_text = text.replace('\\', '\\\\')
-    # Characters that have special meaning in Markdown
     markdown_chars_to_escape = r"([`*_#{}\[\]()+.!-])"
     escaped_text = re.sub(markdown_chars_to_escape, r"\\\1", escaped_text)
-    # Handle specific cases like three or more hyphens/asterisks/underscores
     escaped_text = re.sub(r"---", r"\-\-\-", escaped_text)
     escaped_text = re.sub(r"\*\*\*", r"\*\*\*", escaped_text)
     escaped_text = re.sub(r"___", r"\_\_\_", escaped_text)
@@ -117,8 +119,8 @@ def display_consolidated_summary_and_sources(
     last_extract_queries: List[str]
 ) -> None:
     """
-    Displays the consolidated summary. If focused, also shows sources.
-    Allows intended Markdown (like TLDR lists) from summary_text to render.
+    Displays the consolidated summary using st.code() for copy functionality,
+    and, if applicable, the sources used for a focused summary.
     """
     if summary_text:
         st.markdown("---")
@@ -130,29 +132,26 @@ def display_consolidated_summary_and_sources(
         primary_extract_query = last_extract_queries[0] if last_extract_queries and len(last_extract_queries) > 0 else ""
         was_focused_attempt = bool(any(q.strip() for q in last_extract_queries))
 
-        # Determine the text to display and if it should be sanitized
-        text_to_display = summary_text
-        
         if is_error_message:
-            st.error(f"Consolidated Overview Generation Error: {sanitize_text_for_markdown(summary_text)}")
+            # Use st.error for processor errors for consistent Streamlit styling
+            st.error(summary_text) # These messages from llm_processor are plain text.
             return 
         elif is_info_only_summary:
-            st.info(sanitize_text_for_markdown(summary_text)) # Sanitize simple info messages
+            # Use st.info for processor info messages
+            st.info(summary_text) # These messages from llm_processor are plain text.
             if "General overview as follows" in summary_text:
                 was_focused_attempt = False # Don't show "sources" for general overview
         else: # This is a successfully generated narrative + TLDR
-            if was_focused_attempt: # and not error/info
+            if was_focused_attempt:
                 if primary_extract_query and primary_extract_query.strip():
                     st.caption(f"This overview is focused on insights related to Main Query 1: '{primary_extract_query}'.")
-            # For successfully generated content (narrative + TLDR), display WITHOUT SANITIZATION
-            # to allow Markdown lists from TLDR to render.
-            # text_to_display is already summary_text
+            
+            # Use st.code() for display with built-in copy button.
+            # The summary_text from llm_processor should have \n for paragraphs and \n- for TLDR items.
+            # `language=None` attempts to prevent syntax highlighting.
+            st.code(summary_text, language=None) # KEY CHANGE
 
-        # Display the main content (potentially with Markdown if not error/info)
-        with st.container(border=True):
-            st.markdown(text_to_display, unsafe_allow_html=False) # Key change: use text_to_display
-
-        # Display sources if it was a focused attempt that succeeded and produced sources
+        # Display sources expander (logic remains the same)
         if was_focused_attempt and focused_sources and not is_error_message and not is_info_only_summary:
             with st.expander("ℹ️ View Sources for Focused Consolidated Overview", expanded=False):
                 st.markdown(f"This focused overview was synthesized from **{len(focused_sources)}** high-scoring (>=3/5) extractions:")
@@ -171,6 +170,7 @@ def display_consolidated_summary_and_sources(
     
     elif 'last_keywords' in st.session_state and st.session_state.last_keywords:
          st.info("Consolidated overview is not available for this run (e.g., no items processed or LLM disabled).")
+
 
 def display_individual_results():
     if st.session_state.get('results_data'):
@@ -198,7 +198,8 @@ def display_individual_results():
                     st.error(f"Scraping Error: {item_val_display['scraping_error']}")
                 with st.container(border=True): 
                     st.markdown("**Scraped Metadata:**")
-                    st.markdown(f"  - **Title:** {item_val_display.get('scraped_title', 'N/A')}\n"
+                    # Metadata fields are safer to sanitize
+                    st.markdown(f"  - **Title:** {sanitize_text_for_markdown(item_val_display.get('scraped_title', 'N/A'))}\n" 
                                 f"  - **Meta Desc:** {sanitize_text_for_markdown(item_val_display.get('meta_description', 'N/A'))}\n" 
                                 f"  - **OG Title:** {sanitize_text_for_markdown(item_val_display.get('og_title', 'N/A'))}\n"         
                                 f"  - **OG Desc:** {sanitize_text_for_markdown(item_val_display.get('og_description', 'N/A'))}")    
@@ -215,9 +216,9 @@ def display_individual_results():
                 insights_html_parts = ["<div><p><strong>LLM Insights:</strong></p>"] 
                 
                 raw_llm_summary = item_val_display.get("llm_summary")
-                if raw_llm_summary: # Individual summaries are always sanitized
+                if raw_llm_summary: 
                     has_llm_insights = True
-                    sanitized_llm_summary = sanitize_text_for_markdown(raw_llm_summary)
+                    sanitized_llm_summary = sanitize_text_for_markdown(raw_llm_summary) # Individual summaries are plain text
                     insights_html_parts.append(f"<div style='border:1px solid #e6e6e6; padding:10px; margin-bottom:10px;'><strong>Summary (LLM):</strong><br>{sanitized_llm_summary}</div>")
                 
                 for q_idx in range(2): 
@@ -228,8 +229,8 @@ def display_individual_results():
                     
                     if query_text and query_text.strip() and raw_extracted_content:
                         has_llm_insights = True
-                        # Extracted info (score + text) is complex. Score line should be as-is. Content part is plain text.
-                        # Using <pre> handles newlines in the plain text content part well.
+                        # Extracted info content (after score line) is expected to be plain text.
+                        # Using <pre> to preserve newlines and basic formatting.
                         html_safe_extracted_content = raw_extracted_content.replace('&', '&').replace('<', '<').replace('>', '>')
                         insights_html_parts.append(f"<div style='border:1px solid #e6e6e6; padding:10px; margin-bottom:10px;'><strong>Extracted Info for {query_label}:</strong><br><pre style='white-space: pre-wrap; word-wrap: break-word;'>{html_safe_extracted_content}</pre></div>")
                 
