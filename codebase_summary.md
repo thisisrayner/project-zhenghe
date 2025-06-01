@@ -3,25 +3,12 @@
 ## File: app.py
 Module Docstring:
 ```text
-Streamlit Web Application for the Keyword Search & Analysis Tool (KSAT).
+Streamlit Web Application for D.O.R.A - The Research Agent.
 
-This module serves as the main entry point and orchestrator for the KSAT application.
+This module serves as the main entry point and orchestrator for the D.O.R.A application.
 It is responsible for:
 1.  Setting up the Streamlit page configuration.
-2.  Loading application configurations from `secrets.toml` via the `config` module.
-3.  Initializing and managing Streamlit session state for persistent data across reruns.
-4.  Establishing and managing the connection to Google Sheets for data storage,
-    including header validation, via the `data_storage` module.
-5.  Rendering the main user interface, including the title and sidebar for user inputs,
-    by calling the `ui_manager` module.
-6.  Triggering the core search, scrape, LLM processing, and analysis workflow
-    (managed by `process_manager.py`) when the user initiates a search.
-7.  Receiving results from the `process_manager` and updating the session state,
-    including details about sources for focused consolidated summaries.
-8.  Displaying the consolidated overview, its sources (if focused), individual item results,
-    and processing logs using the `ui_manager`.
-9.  Handling the generation and download of results as an Excel file via the
-    `excel_handler` module.
+# ... (rest of docstring can remain largely the same, or update "KSAT" to "D.O.R.A" if desired for consistency, though you mentioned only UI)
 ```
 
 ---
