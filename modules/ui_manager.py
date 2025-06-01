@@ -1,9 +1,8 @@
 # modules/ui_manager.py
-# Version 1.1.7:
-# - Changed display of consolidated summary to use st.code() for built-in copy
-#   functionality and to show literal dashes for TL;DR points.
-# - Removed sanitize_text_for_markdown application from the main consolidated summary
-#   as st.code() handles preformatted text. Sanitization still used for specific info/error prefixes.
+# Version 1.1.7
+# - Consolidated summary displayed with st.markdown() to allow TL;DR list rendering.
+# - Removed st.code() for summary display as copy button is deferred.
+# - Sanitization is applied to pure info/error messages from the LLM.
 # Version 1.1.6:
 # - (Previous attempt at TLDR list rendering by removing sanitizer from st.markdown)
 # Version 1.1.5:
@@ -20,7 +19,6 @@ from modules import config
 import re
 
 # --- Sanitization Helper ---
-# This is still useful for other text outputs, like metadata in individual results.
 def sanitize_text_for_markdown(text: Optional[str]) -> str:
     """
     Sanitizes text to prevent common markdown rendering issues, especially from LLM output.
@@ -119,8 +117,8 @@ def display_consolidated_summary_and_sources(
     last_extract_queries: List[str]
 ) -> None:
     """
-    Displays the consolidated summary using st.code() for copy functionality,
-    and, if applicable, the sources used for a focused summary.
+    Displays the consolidated summary using st.markdown to render TL;DR lists.
+    If focused, also shows sources.
     """
     if summary_text:
         st.markdown("---")
@@ -132,24 +130,26 @@ def display_consolidated_summary_and_sources(
         primary_extract_query = last_extract_queries[0] if last_extract_queries and len(last_extract_queries) > 0 else ""
         was_focused_attempt = bool(any(q.strip() for q in last_extract_queries))
 
+        text_to_display_final = summary_text # Start with raw text
+
         if is_error_message:
-            # Use st.error for processor errors for consistent Streamlit styling
-            st.error(summary_text) # These messages from llm_processor are plain text.
+            # Error messages from our processor are plain text, no sanitization needed for st.error
+            st.error(text_to_display_final) 
             return 
         elif is_info_only_summary:
-            # Use st.info for processor info messages
-            st.info(summary_text) # These messages from llm_processor are plain text.
+            # Info messages from our processor are plain text, no sanitization needed for st.info
+            st.info(text_to_display_final)
             if "General overview as follows" in summary_text:
-                was_focused_attempt = False # Don't show "sources" for general overview
+                was_focused_attempt = False 
         else: # This is a successfully generated narrative + TLDR
             if was_focused_attempt:
                 if primary_extract_query and primary_extract_query.strip():
                     st.caption(f"This overview is focused on insights related to Main Query 1: '{primary_extract_query}'.")
             
-            # Use st.code() for display with built-in copy button.
-            # The summary_text from llm_processor should have \n for paragraphs and \n- for TLDR items.
-            # `language=None` attempts to prevent syntax highlighting.
-            st.code(summary_text, language=None) # KEY CHANGE
+            # For successfully generated content (narrative + TLDR), display with st.markdown
+            # NO SANITIZATION applied here to allow \n- to render as lists.
+            with st.container(border=True):
+                st.markdown(text_to_display_final, unsafe_allow_html=False)
 
         # Display sources expander (logic remains the same)
         if was_focused_attempt and focused_sources and not is_error_message and not is_info_only_summary:
@@ -198,7 +198,6 @@ def display_individual_results():
                     st.error(f"Scraping Error: {item_val_display['scraping_error']}")
                 with st.container(border=True): 
                     st.markdown("**Scraped Metadata:**")
-                    # Metadata fields are safer to sanitize
                     st.markdown(f"  - **Title:** {sanitize_text_for_markdown(item_val_display.get('scraped_title', 'N/A'))}\n" 
                                 f"  - **Meta Desc:** {sanitize_text_for_markdown(item_val_display.get('meta_description', 'N/A'))}\n" 
                                 f"  - **OG Title:** {sanitize_text_for_markdown(item_val_display.get('og_title', 'N/A'))}\n"         
@@ -218,7 +217,7 @@ def display_individual_results():
                 raw_llm_summary = item_val_display.get("llm_summary")
                 if raw_llm_summary: 
                     has_llm_insights = True
-                    sanitized_llm_summary = sanitize_text_for_markdown(raw_llm_summary) # Individual summaries are plain text
+                    sanitized_llm_summary = sanitize_text_for_markdown(raw_llm_summary)
                     insights_html_parts.append(f"<div style='border:1px solid #e6e6e6; padding:10px; margin-bottom:10px;'><strong>Summary (LLM):</strong><br>{sanitized_llm_summary}</div>")
                 
                 for q_idx in range(2): 
@@ -229,8 +228,6 @@ def display_individual_results():
                     
                     if query_text and query_text.strip() and raw_extracted_content:
                         has_llm_insights = True
-                        # Extracted info content (after score line) is expected to be plain text.
-                        # Using <pre> to preserve newlines and basic formatting.
                         html_safe_extracted_content = raw_extracted_content.replace('&', '&').replace('<', '<').replace('>', '>')
                         insights_html_parts.append(f"<div style='border:1px solid #e6e6e6; padding:10px; margin-bottom:10px;'><strong>Extracted Info for {query_label}:</strong><br><pre style='white-space: pre-wrap; word-wrap: break-word;'>{html_safe_extracted_content}</pre></div>")
                 
