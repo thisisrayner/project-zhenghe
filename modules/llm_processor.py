@@ -1,7 +1,10 @@
 # modules/llm_processor.py
+# Version 1.9.9:
+# - Corrected narrative paragraph instruction to require a blank line (two newlines).
+# - Simplified TLDR post-processing to primarily rely on LLM following prompt for newlines.
+#   Addresses issue of overly aggressive bulleting for hyphenated words in TLDR.
 # Version 1.9.8:
-# - Improved post-processing in `generate_consolidated_summary` for TL;DR
-#   to better handle LLM variations and ensure each point is on a new line with a dash.
+# - Improved post-processing in `generate_consolidated_summary` for TL;DR (attempt).
 # Version 1.9.7: 
 # - (Previous attempt at TLDR post-processing)
 # Version 1.9.6a:
@@ -21,7 +24,8 @@ and providing functionalities such as:
 - Generating summaries of text content.
 - Extracting specific information based on user queries and providing relevancy scores.
 - Generating consolidated overviews from multiple text snippets. The overview consists
-  of a narrative part (plain text) followed by a "TLDR:" section with dash-bulleted key points.
+  of a narrative part (plain text with proper paragraph separation) followed by a
+  "TLDR:" section with dash-bulleted key points.
   This can be a general overview or focused on a specific query (Q1) with potential
   enrichment from a secondary query (Q2).
 - Generating alternative search queries based on initial keywords and user goals (Q1 and Q2).
@@ -169,11 +173,12 @@ def generate_summary(
         "Analyze the following text and provide a comprehensive summary of approximately 4-6 substantial sentences (or 2-3 short paragraphs if the content is rich). "
         "Your summary should capture the core message, key arguments, supporting details, and any significant conclusions or implications. "
         "Maintain a neutral and factual tone. Your entire response for this summary MUST be in PLAIN TEXT only. Do not use any markdown formatting (e.g., no bolding, italics, headers, or lists). "
+        "Paragraphs should be separated by a blank line (two newline characters). " # Corrected for paragraph separation
         "Avoid introductory phrases like 'This text discusses...' or 'The summary of the text is...'. Go directly into the summary content.\n\n"
         "--- WEB PAGE CONTENT START ---\n"
         f"{truncated_text}\n"
         "--- WEB PAGE CONTENT END ---\n\n"
-        "Detailed Summary (PLAIN TEXT ONLY):"
+        "Detailed Summary (PLAIN TEXT ONLY, paragraphs separated by a blank line):"
     )
     return _call_gemini_api(model_name, [prompt], generation_config_args={"max_output_tokens": 512, "temperature": 0.3})
 
@@ -199,7 +204,7 @@ def extract_specific_information(
     prompt = (
         "You are a highly skilled information extraction and relevancy scoring assistant.\n"
         f"Your primary task is to analyze the following web page content based on the user's query: '{extraction_query}'.\n\n"
-        "First, you MUST determine a relevancy score by counting how many distinct pieces of information you find that are directly related to the query '{extraction_query}'. Follow these scoring guidelines precisely:\n"
+        # ... (Relevancy score guidelines unchanged) ...
         "- **Relevancy Score: 5/5** - Awarded if you find 5 or more distinct pieces of information directly related to '{extraction_query}'.\n"
         "- **Relevancy Score: 4/5** - Awarded if you find exactly 4 distinct pieces of information directly related to '{extraction_query}'.\n"
         "- **Relevancy Score: 3/5** - Awarded if you find 1, 2, or 3 distinct pieces of information directly related to '{extraction_query}'.\n"
@@ -241,8 +246,8 @@ def generate_consolidated_summary(
 ) -> Optional[str]:
     """
     Generates a consolidated summary with a narrative part and a TLDR section.
-    The narrative is plain text. The TLDR section uses dash-prefixed key points,
-    with post-processing to attempt to enforce newlines for each point.
+    Narrative is plain text with paragraphs separated by blank lines.
+    TLDR section uses dash-prefixed key points, each on a new line.
     """
     if not summaries: return "LLM_PROCESSOR: No individual LLM outputs provided for consolidation."
     if not configure_gemini(api_key): return "LLM_PROCESSOR Error: Gemini not configured for consolidated summary."
@@ -262,11 +267,11 @@ def generate_consolidated_summary(
 
     if not texts_for_llm_input:
         if is_primary_focused_consolidation_active:
-            return (f"LLM_PROCESSOR_INFO: No suitable content found from items matching relevancy criteria for query: '{extraction_query_for_consolidation}'. Cannot generate focused overview.")
+            return (f"LLM_PROCESSOR_INFO: No suitable content found for query: '{extraction_query_for_consolidation}'. Cannot generate focused overview.")
         else:
-            return "LLM_PROCESSOR_INFO: No valid LLM outputs found to consolidate into a general overview."
+            return "LLM_PROCESSOR_INFO: No valid LLM outputs found to consolidate."
 
-    combined_texts = "\n\n---\n\n".join([f"Source Document Content Snippet {i+1}:\n{text_entry}" for i, text_entry in enumerate(texts_for_llm_input)])
+    combined_texts = "\n\n---\n\n".join([f"Source Snippet {i+1}:\n{text_entry}" for i, text_entry in enumerate(texts_for_llm_input)])
     truncated_combined_text = _truncate_text_for_gemini(combined_texts, model_name, max_input_chars)
 
     prompt_instruction: str
@@ -275,7 +280,7 @@ def generate_consolidated_summary(
     narrative_plain_text_instruction = (
         "For the main narrative overview that you generate, it MUST be in PLAIN TEXT. "
         "This means no markdown formatting like bolding, italics, headers, or lists using '*', '#', etc. "
-        "Paragraphs should be separated by a single newline character."
+        "Paragraphs should be separated by a blank line (i.e., two newline characters)." # CORRECTED
     )
     tldr_specific_instruction = (
         "\n\nAfter completing the comprehensive narrative overview, create a distinct section titled 'TLDR:'. "
@@ -295,15 +300,15 @@ def generate_consolidated_summary(
                 f"adding nuance and depth, especially where they complement or expand upon the primary findings."
             )
         prompt_instruction = (
-            f"You are an expert research analyst. Based on the provided text snippets (which are LLM extraction results, possibly including 'Relevancy Score' lines that you should ignore for summarization), "
+            f"You are an expert research analyst. Based on the provided text snippets (LLM extraction results, ignore 'Relevancy Score' lines for summarization), "
             f"your primary task is to synthesize a detailed and comprehensive consolidated **narrative overview**. This narrative should deeply explore insights related to the central query: '{central_query_text}'.{enrichment_instruction_text}\n"
             f"{narrative_plain_text_instruction}\n"
             "Construct this narrative overview by:\n"
-            "1. Identifying key findings, arguments, and data points in the snippets relevant to the central query.\n"
-            "2. Weaving this information into a cohesive narrative that thoroughly explains what was found regarding the query.\n"
-            "3. Highlighting significant patterns, corroborating evidence, or discrepancies.\n"
-            "4. Elaborating on implications or main takeaways concerning the central query.\n"
-            "A longer, more elaborate narrative (e.g., 3-5 substantial paragraphs) is strongly preferred. "
+            "1. Identifying key findings, arguments, and data points relevant to the central query.\n"
+            "2. Weaving this information into a cohesive narrative.\n"
+            "3. Highlighting significant patterns or discrepancies.\n"
+            "4. Elaborating on implications concerning the central query.\n"
+            "A longer, more elaborate narrative (3-5 substantial paragraphs or more) is strongly preferred. "
             "Focus predominantly on the central query. Avoid generic phrases. "
             f"Begin the narrative directly.{tldr_specific_instruction}{final_tldr_emphasis}\n\n"
         )
@@ -312,11 +317,11 @@ def generate_consolidated_summary(
     else: # General consolidation
         final_topic_context_for_prompt = topic_context
         prompt_instruction = (
-            f"You are an expert analyst. Based on the provided text snippets (which are general summaries or extractions), "
+            f"You are an expert analyst. Based on the provided text snippets (general summaries or extractions), "
             f"your task is to first create a single, coherent consolidated **narrative overview** broadly related to the topic: '{final_topic_context_for_prompt}'.\n"
             f"{narrative_plain_text_instruction}\n"
-            "Identify main themes, arguments, and key information across the texts. Synthesize these into a cohesive narrative. "
-            "Highlight notable patterns or discrepancies. Present in well-structured paragraphs (e.g., 2-4 substantial paragraphs)."
+            "Identify main themes and key information. Synthesize into a cohesive narrative. "
+            "Highlight notable patterns. Present in well-structured paragraphs (2-4 substantial paragraphs)."
             f"{tldr_specific_instruction}{final_tldr_emphasis}\n\n"
         )
         max_tokens_for_call = 1024
@@ -330,47 +335,21 @@ def generate_consolidated_summary(
     if llm_response and not llm_response.lower().startswith("llm error") and not llm_response.lower().startswith("llm_processor error"):
         if "TLDR:" in llm_response:
             parts = llm_response.split("TLDR:", 1)
-            narrative_part = parts[0].rstrip()
+            narrative_part = parts[0].rstrip() # Narrative ends here
             tldr_content_raw = ""
             if len(parts) == 2:
-                tldr_content_raw = parts[1].strip()
+                tldr_content_raw = parts[1].strip() # Content after "TLDR:"
 
             if tldr_content_raw:
-                # Post-processing to format TLDR points
-                # Remove leading and trailing whitespace from the whole TLDR block
-                tldr_block = tldr_content_raw.strip()
-                
-                # Split into potential points. LLM might use " - " or just "- " or "\n- "
-                # First, normalize newlines that might already exist before dashes.
-                tldr_block = re.sub(r'\n\s*-\s*', '@@POINT@@- ', tldr_block)
-                # Then, normalize dashes that are not at the start of a line (likely run-on points)
-                tldr_block = re.sub(r'(?<!\n)\s*-\s*(?!\s*-)', '@@POINT@@- ', tldr_block) # Negative lookahead for not another dash immediately
-                
-                # If the block itself starts with a dash without a marker, add it
-                if tldr_block.startswith("- "):
-                    tldr_block = "@@POINT@@" + tldr_block
-                elif tldr_block.startswith(" - "):
-                     tldr_block = "@@POINT@@" + tldr_block[1:]
-
-
-                points = [p.strip() for p in tldr_block.split("@@POINT@@") if p.strip()]
-                
-                # Reconstruct the TLDR with each point on a new line, correctly prefixed
-                formatted_tldr_items = []
-                for point_text in points:
-                    if point_text.startswith("- "):
-                        formatted_tldr_items.append(point_text)
-                    else: # If it's a fragment before the first dash or some other text
-                        formatted_tldr_items.append("- " + point_text) # Add dash if missing, or handle as intro
-
-                if formatted_tldr_items:
-                    llm_response = narrative_part + "\n\nTLDR:\n" + "\n".join(formatted_tldr_items)
-                else: # Content after TLDR: was empty or only whitespace after processing
-                    llm_response = narrative_part + "\n\nTLDR:\n(No key points extracted or formatted)"
-            else: # TLDR: was found but no content after it
+                # Minimal post-processing: Ensure "TLDR:" itself is on a new line
+                # and the content after it is passed as is.
+                # The prompt now heavily relies on the LLM for the newlines before each dash.
+                # If the LLM still runs them together, the prompt needs more emphasis or examples.
+                llm_response = narrative_part + "\n\nTLDR:\n" + tldr_content_raw
+            else: # TLDR: title found, but no content after it
                  llm_response = narrative_part + "\n\nTLDR:\n(No key points provided by LLM)"
         else:
-            print("LLM_PROCESSOR_WARNING: Consolidated summary generated, but 'TLDR:' section title seems to be missing from LLM output.")
+            print("LLM_PROCESSOR_WARNING: Consolidated summary: 'TLDR:' section title missing from LLM output.")
         
         return result_prefix + llm_response
     return llm_response
@@ -386,6 +365,7 @@ def generate_search_queries(
     max_input_chars: int = 2500
 ) -> Optional[List[str]]:
     """Generates new search queries."""
+    # ... (Function content remains the same as v1.9.7)
     if not original_keywords: return None
     if num_queries_to_generate <= 0: return []
     if not configure_gemini(api_key): print("LLM_PROCESSOR Warning: Gemini not configured for generating search queries."); return None
@@ -419,11 +399,12 @@ def generate_search_queries(
         return generated_queries[:num_queries_to_generate]
     print(f"LLM_PROCESSOR Warning: Failed to generate search queries or error occurred. Response: {response_text}"); return None
 
+
 if __name__ == '__main__':
     st.set_page_config(layout="wide")
-    st.title("LLM Processor Module Test (Google Gemini v1.9.8 - Narrative + TLDR Consolidation)") # Updated version
-    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="main_api_key_test_llm_v198")
-    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="main_model_name_test_llm_v198")
+    st.title("LLM Processor Module Test (Google Gemini v1.9.9 - Narrative + TLDR Consolidation)")
+    GEMINI_API_KEY_TEST = st.text_input("Enter Gemini API Key for testing:", type="password", key="main_api_key_test_llm_v199")
+    MODEL_NAME_TEST = st.text_input("Gemini Model Name for testing:", "models/gemini-1.5-flash-latest", key="main_model_name_test_llm_v199")
     configured_for_test = False
     if GEMINI_API_KEY_TEST:
         if configure_gemini(GEMINI_API_KEY_TEST, force_recheck_models=True):
@@ -434,12 +415,13 @@ if __name__ == '__main__':
     else: st.info("Enter Gemini API Key to enable tests.")
 
     if configured_for_test:
+        # Test Generate Search Queries (Cached) - code unchanged from v1.9.8
         with st.expander("Test Generate Search Queries (Cached)", expanded=False):
-            test_original_keywords_str_gsq = st.text_input("Original Keywords (comma-separated):", "home office setup, ergonomic chair", key="test_orig_kw_gsq_v198")
-            test_specific_info_query_gsq = st.text_input("Specific Info Goal (Q1 - Optional):", "best chair for back pain under $300", key="test_spec_info_q1_gsq_v198")
-            test_specific_info_query_2_gsq = st.text_input("Specific Info Goal (Q2 - Optional):", "desk height for standing", key="test_spec_info_q2_gsq_v198")
-            test_num_queries_to_gen_gsq = st.number_input("Number of New Queries to Generate:", min_value=1, max_value=10, value=2, key="test_num_q_gen_gsq_v198")
-            if st.button("Test Query Generation (Cached)", key="test_query_gen_button_gsq_v198"):
+            test_original_keywords_str_gsq = st.text_input("Original Keywords (comma-separated):", "home office setup, ergonomic chair", key="test_orig_kw_gsq_v199")
+            test_specific_info_query_gsq = st.text_input("Specific Info Goal (Q1 - Optional):", "best chair for back pain under $300", key="test_spec_info_q1_gsq_v199")
+            test_specific_info_query_2_gsq = st.text_input("Specific Info Goal (Q2 - Optional):", "desk height for standing", key="test_spec_info_q2_gsq_v199")
+            test_num_queries_to_gen_gsq = st.number_input("Number of New Queries to Generate:", min_value=1, max_value=10, value=2, key="test_num_q_gen_gsq_v199")
+            if st.button("Test Query Generation (Cached)", key="test_query_gen_button_gsq_v199"):
                 test_original_keywords_tuple = tuple(k.strip() for k in test_original_keywords_str_gsq.split(',') if k.strip())
                 if not test_original_keywords_tuple: st.warning("Please enter original keywords.")
                 else:
@@ -455,55 +437,58 @@ if __name__ == '__main__':
                     if new_queries is not None: st.json(new_queries)
                     else: st.write("No new queries generated or error.")
 
+        # Test Individual Summary (Cached) - code unchanged from v1.9.8
         with st.expander("Test Individual Summary (Cached)", expanded=False):
-            sample_text_summary_cached = st.text_area("Sample Text for Summary:", "The Eiffel Tower is a famous landmark in Paris, France.", height=100, key="test_sample_summary_text_v198_cached")
-            if st.button("Test Summary Generation (Cached)", key="test_summary_gen_button_v198_cached"):
+            sample_text_summary_cached = st.text_area("Sample Text for Summary:", "The Eiffel Tower is a famous landmark in Paris, France.", height=100, key="test_sample_summary_text_v199_cached")
+            if st.button("Test Summary Generation (Cached)", key="test_summary_gen_button_v199_cached"):
                  with st.spinner(f"Generating summary..."):
                     summary_output = generate_summary(sample_text_summary_cached, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
-                 st.markdown("**Generated Summary (Plain Text Expected):**"); st.text(summary_output)
+                 st.markdown("**Generated Summary (Plain Text Expected):**"); st.text(summary_output) # .text for plain
 
+        # Test Specific Information Extraction (Cached) - code unchanged from v1.9.8
         with st.expander("Test Specific Information Extraction (Cached)", expanded=False):
-            sample_text_extraction_cached = st.text_area("Sample Text for Extraction:", "The main product is X and it costs $50. Contact sales@example.com for more.", height=100, key="test_sample_extraction_text_v198_cached")
-            extraction_query_test_cached = st.text_input("Extraction Query:", "product name and contact email", key="test_extraction_query_input_v198_cached")
-            if st.button("Test Extraction & Relevancy Scoring (Cached)", key="test_extraction_score_button_v198_cached"):
+            sample_text_extraction_cached = st.text_area("Sample Text for Extraction:", "The main product is X and it costs $50. Contact sales@example.com for more.", height=100, key="test_sample_extraction_text_v199_cached")
+            extraction_query_test_cached = st.text_input("Extraction Query:", "product name and contact email", key="test_extraction_query_input_v199_cached")
+            if st.button("Test Extraction & Relevancy Scoring (Cached)", key="test_extraction_score_button_v199_cached"):
                 if not extraction_query_test_cached: st.warning("Please enter an extraction query.")
                 else:
                     with st.spinner(f"Extracting info..."):
                         extraction_output = extract_specific_information(sample_text_extraction_cached, extraction_query_test_cached, GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST)
                     st.markdown("**Extraction Output (Score + Plain Text Content Expected):**"); st.text(extraction_output)
 
-        st.subheader("Consolidated Summary Test Area (v1.9.8 - Narrative + TLDR)")
+
+        st.subheader("Consolidated Summary Test Area (v1.9.9 - Narrative + TLDR)")
         with st.expander("Test Consolidation (Narrative + TLDR)", expanded=True):
-            st.write("Input texts. The LLM will attempt a narrative summary (plain text) followed by a 'TLDR:' section with dash-prefixed key points. Post-processing attempts to format TLDR points onto new lines.")
-            cs_text1_v198 = st.text_area("Text 1 (e.g., High-score Q1 output):", "Relevancy Score: 4/5\nSolar panel efficiency research focuses on perovskite materials, showing promise. Current generation polysilicon panels have an average annual degradation rate of approximately 0.5%.", height=100, key="cs_text1_v198")
-            cs_text2_v198 = st.text_area("Text 2 (e.g., High-score Q2 output):", "Relevancy Score: 3/5\nSolar inverters are crucial for system performance and typically last 10-15 years. Maintenance of inverters can contribute significantly to the long-term cost of a solar installation.", height=100, key="cs_text2_v198")
-            cs_text3_v198 = st.text_area("Text 3 (e.g., General summary):", "Summary: Wind energy is another important renewable source. It has different siting requirements and environmental considerations compared to solar power. Offshore wind is gaining traction.", height=100, key="cs_text3_v198")
+            st.write("Input texts. LLM should produce plain text narrative with paragraphs separated by blank lines, then 'TLDR:' with dash-prefixed points each on a new line.")
+            cs_text1_v199 = st.text_area("Text 1:", "Relevancy Score: 4/5\nSolar panel efficiency research focuses on perovskite materials. Polysilicon panels degrade at 0.5% annually.", height=80, key="cs_text1_v199")
+            cs_text2_v199 = st.text_area("Text 2:", "Relevancy Score: 3/5\nInverters last 10-15 years. Maintenance is a cost factor.", height=80, key="cs_text2_v199")
+            cs_text3_v199 = st.text_area("Text 3:", "Summary: Wind energy is another option with different challenges.", height=80, key="cs_text3_v199")
 
-            cs_topic_v198 = st.text_input("General Topic Context (for general summary):", "Renewable Energy Technologies", key="cs_topic_v198")
-            cs_q1_v198 = st.text_input("Q1 for Consolidation (Primary Focus):", "key aspects of solar panel technology and performance", key="cs_q1_v198")
-            cs_q2_v198 = st.text_input("Q2 for Enrichment (Secondary Context):", "long-term considerations for solar energy systems", key="cs_q2_v198")
+            cs_topic_v199 = st.text_input("General Topic Context:", "Renewable Energy Tech", key="cs_topic_v199")
+            cs_q1_v199 = st.text_input("Q1 for Consolidation (Primary Focus):", "solar panel tech and performance", key="cs_q1_v199")
+            cs_q2_v199 = st.text_input("Q2 for Enrichment (Secondary Context):", "solar system components and maintenance", key="cs_q2_v199")
 
-            if st.button("Test Focused Consolidation (Narrative + TLDR)", key="focused_cs_button_v198"):
-                if not cs_q1_v198: st.warning("Please enter Q1 for primary focus.")
+            if st.button("Test Focused Consolidation (Narrative + TLDR)", key="focused_cs_button_v199"):
+                if not cs_q1_v199: st.warning("Please enter Q1 for primary focus.")
                 else:
-                    texts_cs = tuple(t for t in [cs_text1_v198, cs_text2_v198, cs_text3_v198] if t and t.strip())
-                    if not texts_cs: st.warning("Please provide at least one text for consolidation.")
+                    texts_cs = tuple(t for t in [cs_text1_v199, cs_text2_v199, cs_text3_v199] if t and t.strip())
+                    if not texts_cs: st.warning("Please provide at least one text.")
                     else:
-                        with st.spinner("Generating focused consolidated summary (narrative + TLDR)..."):
+                        with st.spinner("Generating focused summary..."):
                             output = generate_consolidated_summary(
-                                summaries=texts_cs, topic_context=cs_topic_v198,
+                                summaries=texts_cs, topic_context=cs_topic_v199,
                                 api_key=GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST,
-                                extraction_query_for_consolidation=cs_q1_v198.strip(),
-                                secondary_query_for_enrichment=cs_q2_v198.strip() if cs_q2_v198.strip() else None )
+                                extraction_query_for_consolidation=cs_q1_v199.strip(),
+                                secondary_query_for_enrichment=cs_q2_v199.strip() if cs_q2_v199.strip() else None )
                         st.markdown("**Consolidated Output (Focused Narrative + TLDR):**"); st.markdown(output)
 
-            if st.button("Test General Consolidation (Narrative + TLDR)", key="general_cs_button_v198"):
-                texts_cs = tuple(t for t in [cs_text1_v198, cs_text2_v198, cs_text3_v198] if t and t.strip())
-                if not texts_cs: st.warning("Please provide at least one text for consolidation.")
+            if st.button("Test General Consolidation (Narrative + TLDR)", key="general_cs_button_v199"):
+                texts_cs = tuple(t for t in [cs_text1_v199, cs_text2_v199, cs_text3_v199] if t and t.strip())
+                if not texts_cs: st.warning("Please provide at least one text.")
                 else:
-                    with st.spinner("Generating general consolidated summary (narrative + TLDR)..."):
+                    with st.spinner("Generating general summary..."):
                          output = generate_consolidated_summary(
-                            summaries=texts_cs, topic_context=cs_topic_v198,
+                            summaries=texts_cs, topic_context=cs_topic_v199,
                             api_key=GEMINI_API_KEY_TEST, model_name=MODEL_NAME_TEST,
                             extraction_query_for_consolidation=None, secondary_query_for_enrichment=None)
                     st.markdown("**Consolidated Output (General Narrative + TLDR):**"); st.markdown(output)
