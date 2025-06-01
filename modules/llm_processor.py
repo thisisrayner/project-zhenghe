@@ -1,7 +1,7 @@
 # modules/llm_processor.py
-# Version 1.9.7: (Assuming new version for this significant fix)
-# - Added post-processing in `generate_consolidated_summary` to correctly
-#   format dash-prefixed TL;DR points onto new lines for UI rendering.
+# Version 1.9.7:
+# - Corrected and simplified post-processing logic in `generate_consolidated_summary`
+#   to reliably format dash-prefixed TL;DR points onto new lines.
 # Version 1.9.6a:
 # - Attempt to make TL;DR instruction more prominent in `generate_consolidated_summary` prompt.
 # Version 1.9.6:
@@ -304,7 +304,7 @@ def generate_consolidated_summary(
             "Focus predominantly on the central query. Avoid generic phrases. "
             f"Begin the narrative directly.{tldr_specific_instruction}{final_tldr_emphasis}\n\n"
         )
-        max_tokens_for_call = 2048
+        max_tokens_for_call = 2048 
         final_topic_context_for_prompt = central_query_text
     else: # General consolidation
         final_topic_context_for_prompt = topic_context
@@ -327,71 +327,53 @@ def generate_consolidated_summary(
     if llm_response and not llm_response.lower().startswith("llm error") and not llm_response.lower().startswith("llm_processor error"):
         if "TLDR:" in llm_response:
             parts = llm_response.split("TLDR:", 1)
+            narrative_part = parts[0].rstrip()
+            tldr_content_raw = ""
             if len(parts) == 2:
-                narrative_part = parts[0]
-                tldr_part = parts[1].strip() # Strip whitespace around the TLDR content
+                tldr_content_raw = parts[1].strip()
+
+            if tldr_content_raw:
+                # Replace occurrences of " - " (dash surrounded by spaces) with "\n- "
+                # This ensures that each item intended as a bullet point starts on a new line.
+                # We also handle the case where a point might start with "- " (dash then space) at the beginning of the tldr_content_raw.
                 
-                # Split the TLDR part by " - " but handle the case where the first part of the split might be empty
-                # if the TLDR content starts immediately with " - ".
-                tldr_points_raw = tldr_part.split(" - ")
+                # Normalize by removing existing newlines specifically before a dash-space,
+                # then replace dash-space with newline-dash-space.
+                # This makes the replacement more idempotent if the LLM sometimes gets it right.
+                tldr_content_processed = tldr_content_raw.replace("\n- ", "- ") # Remove existing good newlines
+                tldr_content_processed = tldr_content_processed.replace("\n - ", "- ") # Remove existing good newlines with extra space
+
+                # Now, ensure all intended bullet points (starting with "- ") get a newline.
+                # Split by "- " and then rejoin with "\n- ", taking care of potential intro text.
                 
-                formatted_tldr_items = []
-                if tldr_points_raw:
-                    # The first element in tldr_points_raw is whatever came *before* the first " - "
-                    # or the whole string if " - " wasn't found (though unlikely given the split).
-                    # If tldr_points_raw[0] is not empty, it might be an intro to the list or just spacing.
-                    # We want to preserve any text before the first actual point.
-                    
-                    first_segment = tldr_points_raw[0].strip()
-                    if first_segment: # If there's text before the first " - " or if no " - " at all.
-                        # This might be a single line TLDR without dashes, or an intro.
-                        # If we expect dashes, this part is tricky.
-                        # Let's assume if " - " is used, it's for list items.
-                        # If no " - " in tldr_part, tldr_points_raw will have one element: tldr_part itself.
-                        # So, we simply add it, and if it needs to be dashed, the prompt should have guided that.
-                        pass # This part becomes complex if the LLM *doesn't* use dashes.
-                             # The goal is to format what it *does* give with dashes.
+                tldr_points = []
+                # If tldr_content_processed starts with "- ", the first split element will be empty.
+                if tldr_content_processed.startswith("- "):
+                    split_items = tldr_content_processed.split("- ", 1) # Split only on the first occurrence
+                    if len(split_items) > 1 and split_items[1].strip():
+                         tldr_points.append("- " + split_items[1].strip().replace(" - ", "\n- "))
+                else: # May have intro text before the first dash
+                    first_dash_idx = tldr_content_processed.find(" - ")
+                    if first_dash_idx != -1:
+                        intro = tldr_content_processed[:first_dash_idx].strip()
+                        if intro:
+                            tldr_points.append(intro)
+                        # Process the rest
+                        rest_of_points = tldr_content_processed[first_dash_idx:].strip()
+                        if rest_of_points.startswith("- "):
+                             tldr_points.append(rest_of_points.replace(" - ", "\n- "))
+                        else: # Should not happen if find found " - "
+                             tldr_points.append(rest_of_points)
+                    else: # No " - " found, just use the content as is
+                        tldr_points.append(tldr_content_processed)
 
-                    # Process segments that should be dash-prefixed points
-                    # If tldr_part was " - point1 - point2", tldr_points_raw would be ["", "point1", "point2"]
-                    # If tldr_part was "intro - point1", tldr_points_raw would be ["intro", "point1"]
-                    
-                    actual_points = []
-                    if tldr_part.startswith("-") or tldr_part.startswith(" -"): # Started with a dash
-                        for point_text in tldr_points_raw:
-                            if point_text.strip(): # Ignore empty strings from multiple " - "
-                                actual_points.append("- " + point_text.strip())
-                    elif tldr_points_raw[0].strip() and len(tldr_points_raw) > 1 : # Text, then dashes
-                        actual_points.append(tldr_points_raw[0].strip()) # keep the intro
-                        for point_text in tldr_points_raw[1:]:
-                            if point_text.strip():
-                                actual_points.append("- " + point_text.strip())
-                    elif tldr_points_raw[0].strip(): # Only one segment, no dashes.
-                         actual_points.append(tldr_points_raw[0].strip())
-
-
-                    if actual_points:
-                        # If the first actual point wasn't the intro and doesn't start with a dash, add it.
-                        # This logic is getting complicated due to anticipating LLM output variations.
-                        # A simpler regex replace might be better if the pattern is consistent.
-                        # Let's try a regex approach for inserting newlines before dashes.
-                        
-                        # Regex to find " - " that is not at the beginning of a line (after stripping tldr_part)
-                        # and insert a newline before it.
-                        # (?<=\S) ensures there's a non-whitespace character before " - " to avoid adding newline at start.
-                        tldr_part_formatted = re.sub(r'(?<=\S)( +- +)', r'\n\1', tldr_part)
-                        # Ensure the very first dash also starts on a new line if tldr_part starts with it.
-                        if tldr_part_formatted.startswith(" -"):
-                            tldr_part_formatted = tldr_part_formatted[1:].strip() # remove leading space if any
-                            tldr_part_formatted = "- " + tldr_part_formatted
-                        
-                        llm_response = narrative_part.rstrip() + "\n\nTLDR:\n" + tldr_part_formatted.strip()
-                    else: # No " - " found, just use the stripped tldr_part
-                        llm_response = narrative_part.rstrip() + "\n\nTLDR:\n" + tldr_part
-                else: # len(parts) != 2, means "TLDR:" wasn't found as expected or split weirdly
-                    print("LLM_PROCESSOR_WARNING: 'TLDR:' found, but splitting logic failed. Raw response returned.")
+                formatted_tldr = "\n".join(tldr_points)
+                llm_response = narrative_part + "\n\nTLDR:\n" + formatted_tldr.strip()
+            else: # TLDR: was found but no content after it
+                 llm_response = narrative_part + "\n\nTLDR:\n(No key points provided by LLM)"
         else:
             print("LLM_PROCESSOR_WARNING: Consolidated summary generated, but 'TLDR:' section title seems to be missing from LLM output.")
+        
         return result_prefix + llm_response
     return llm_response
 
