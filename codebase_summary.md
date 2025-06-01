@@ -4,11 +4,7 @@
 Module Docstring:
 ```text
 Streamlit Web Application for D.O.R.A - The Research Agent.
-
-This module serves as the main entry point and orchestrator for the D.O.R.A application.
-It is responsible for:
-1.  Setting up the Streamlit page configuration.
-# ... (rest of docstring can remain largely the same, or update "KSAT" to "D.O.R.A" if desired for consistency, though you mentioned only UI)
+...
 ```
 
 ---
