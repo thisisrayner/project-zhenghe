@@ -42,7 +42,7 @@ The project is designed with a high degree of modularity, with `app.py` acting a
 
 ## Project Structure
 
-    dora-research-agent/ # Assuming project root, can be updated if actual folder name changes
+    /project-zhenghe
     ├── app.py # Main Streamlit application orchestrator for D.O.R.A
     ├── modules/
     │   ├── __init__.py
