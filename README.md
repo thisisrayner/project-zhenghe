@@ -122,7 +122,7 @@ Usage
 
 Note: LLM-enhanced query generation and individual item summarization/extraction are automatic features that run if a valid LLM API key is provided.
 
-Important Note for Contributing Agents
+## Important Note for Contributing Agents
 
 When modifying the codebase (app.py, modules/*.py):
 
