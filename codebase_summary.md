@@ -4,7 +4,6 @@
 Module Docstring:
 ```text
 Streamlit Web Application for D.O.R.A - The Research Agent.
-...
 ```
 
 ---
