@@ -294,7 +294,7 @@ Manages the Streamlit User Interface elements, layout, and user inputs.
 Docstring:
 ```text
 Sanitizes text to prevent common markdown rendering issues, especially from LLM output.
-Escapes markdown special characters.
+Escapes markdown special characters. Intended for text where no markdown is desired.
 ```
 
 ### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
@@ -316,7 +316,8 @@ Docstring:
 ### def display_consolidated_summary_and_sources(summary_text: Optional[str], focused_sources: Optional[List[Dict[str, Any]]], last_extract_queries: List[str]) -> None
 Docstring:
 ```text
-Displays the consolidated summary and, if applicable, the sources used for a focused summary.
+Displays the consolidated summary. If focused, also shows sources.
+Allows intended Markdown (like TLDR lists) from summary_text to render.
 ```
 
 ### def display_individual_results()
