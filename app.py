@@ -8,7 +8,6 @@
 # - Handles new return value from process_manager.
 """
 Streamlit Web Application for D.O.R.A - The Research Agent.
-...
 """
 
 import streamlit as st
