@@ -273,7 +273,8 @@ Parses score and extracts content.
 Docstring:
 ```text
 Generates a consolidated summary with a narrative part and a TLDR section.
-The narrative is plain text. The TLDR section uses dash-prefixed key points.
+The narrative is plain text. The TLDR section uses dash-prefixed key points,
+with post-processing to attempt to enforce newlines for each point.
 ```
 
 ### def generate_search_queries(original_keywords: Tuple[str, ...], specific_info_query: Optional[str], specific_info_query_2: Optional[str], num_queries_to_generate: int, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 2500) -> Optional[List[str]]
