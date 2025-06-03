@@ -476,6 +476,7 @@ Returns:
 Module Docstring:
 ```text
 Handles the main workflow of searching, scraping, LLM processing, and data aggregation.
+Communicates final processing status back via specific log messages.
 ```
 
 ### class FocusedSummarySource(TypedDict)
