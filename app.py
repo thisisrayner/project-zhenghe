@@ -1,4 +1,7 @@
 # app.py
+# Version 3.1.3:
+# - Corrected arguments passed to excel_handler.prepare_consolidated_summary_df
+#   to match its updated signature (v1.2.0 of excel_handler).
 # Version 3.1.2:
 # - Rebranded UI to "D.O.R.A".
 # - Updated page title, main title, subtitle, caption, and download filenames per new branding.
@@ -29,27 +32,26 @@ if not cfg:
     st.stop()
 
 # --- Session State Initialization ---
-# (Session state remains the same)
 default_session_state: Dict[str, Any] = {
     'processing_log': [],
     'results_data': [],
     'last_keywords': "",
-    'last_extract_queries': ["", ""],
+    'last_extract_queries': ["", ""], # Stores [Q1_text, Q2_text]
     'consolidated_summary_text': None,
-    'focused_summary_sources': [],
+    'focused_summary_sources': [], # List of FocusedSummarySource TypedDicts
     'gs_worksheet': None,
     'sheet_writing_enabled': False,
     'sheet_connection_attempted_this_session': False,
     'gsheets_error_message': None,
     'initial_keywords_for_display': set(),
-    'llm_generated_keywords_set_for_display': set()
+    'llm_generated_keywords_set_for_display': set(),
+    'batch_timestamp_for_excel': None # To store a consistent timestamp for the batch
 }
 for key, default_value in default_session_state.items():
     if key not in st.session_state:
         st.session_state[key] = default_value
 
 # --- Google Sheets Setup ---
-# (Google Sheets setup remains the same)
 gsheets_secrets_present = bool(cfg.gsheets.service_account_info and \
                            (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name))
 
@@ -76,7 +78,7 @@ if not st.session_state.sheet_connection_attempted_this_session:
 
 # --- UI Rendering ---
 st.title("D.O.R.A 🔮")
-st.markdown("The **Research** **Agent** For **Domain**-Wide **Overview** and Insights.") # MODIFIED: "Insights" no longer bold.
+st.markdown("The **Research** **Agent** For **Domain**-Wide **Overview** and Insights.")
 
 keywords_input, num_results, llm_extract_queries_list, start_button = ui_manager.render_sidebar(
     cfg,
@@ -89,7 +91,6 @@ results_container = st.container()
 log_container = st.container()
 
 # --- Main Processing Logic ---
-# (Main processing logic remains the same)
 if start_button:
     st.session_state.processing_log = ["Processing initiated..."]
     st.session_state.results_data = []
@@ -97,12 +98,19 @@ if start_button:
     st.session_state.focused_summary_sources = []
     st.session_state.initial_keywords_for_display = set()
     st.session_state.llm_generated_keywords_set_for_display = set()
+    st.session_state.batch_timestamp_for_excel = time.strftime('%Y-%m-%d %H:%M:%S') # Set batch timestamp here
 
     st.session_state.last_keywords = keywords_input
-    st.session_state.last_extract_queries = llm_extract_queries_list
+    st.session_state.last_extract_queries = llm_extract_queries_list # This now holds [Q1, Q2] from UI
 
     active_llm_extract_queries = [q for q in llm_extract_queries_list if q.strip()]
 
+    # Call process_manager.run_search_and_analysis
+    # The signature of run_search_and_analysis in process_manager v1.4.0 (with throttling)
+    # returns: processing_log, results_data, consolidated_summary_text,
+    #          initial_keywords_for_display, llm_generated_keywords_set_for_display,
+    #          focused_summary_source_details
+    # This matches the unpacking here.
     log, data, summary, initial_kws_display, llm_kws_display, focused_sources = process_manager.run_search_and_analysis(
         app_config=cfg,
         keywords_input=keywords_input,
@@ -116,50 +124,66 @@ if start_button:
     st.session_state.processing_log = log
     st.session_state.results_data = data
     st.session_state.consolidated_summary_text = summary
-    st.session_state.focused_summary_sources = focused_sources
+    st.session_state.focused_summary_sources = focused_sources # List of FocusedSummarySource dicts
     st.session_state.initial_keywords_for_display = initial_kws_display
     st.session_state.llm_generated_keywords_set_for_display = llm_kws_display
 
 # --- Display Results and Logs ---
-# (Display logic for results and logs remains the same)
 with results_container:
-    if st.session_state.results_data:
+    if st.session_state.get("results_data") or st.session_state.get("consolidated_summary_text"): # Check if there's anything to show/download
         st.markdown("---")
+        
+        # Prepare df_item_details (assuming results_data might be empty but summary exists)
         df_item_details = excel_handler.prepare_item_details_df(
-            st.session_state.results_data,
-            st.session_state.last_extract_queries
+            st.session_state.get("results_data", []), # Pass empty list if no results_data
+            st.session_state.last_extract_queries # Contains [Q1_text, Q2_text]
         )
 
-        batch_excel_timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
         df_consolidated_summary_excel = None
         if st.session_state.consolidated_summary_text:
-             df_consolidated_summary_excel = excel_handler.prepare_consolidated_summary_df(
-                st.session_state.consolidated_summary_text,
-                len(st.session_state.results_data),
-                st.session_state.last_keywords,
-                st.session_state.last_extract_queries[0] if st.session_state.last_extract_queries and st.session_state.last_extract_queries[0] else None,
-                batch_excel_timestamp
+            q1_text_for_excel = st.session_state.last_extract_queries[0] if st.session_state.last_extract_queries and st.session_state.last_extract_queries[0] else None
+            q2_text_for_excel = st.session_state.last_extract_queries[1] if st.session_state.last_extract_queries and len(st.session_state.last_extract_queries) > 1 and st.session_state.last_extract_queries[1] else None
+            
+            # Determine focused_summary_source_count
+            focused_count_for_excel = None
+            if st.session_state.focused_summary_sources is not None: # Check if it's None or an empty list
+                focused_count_for_excel = len(st.session_state.focused_summary_sources)
+
+            df_consolidated_summary_excel = excel_handler.prepare_consolidated_summary_df(
+                consolidated_summary_text=st.session_state.consolidated_summary_text,
+                results_data_count=len(st.session_state.get("results_data", [])),
+                last_keywords=st.session_state.last_keywords,
+                primary_llm_extract_query=q1_text_for_excel,
+                secondary_llm_extract_query=q2_text_for_excel, # ADDED
+                batch_timestamp=st.session_state.get("batch_timestamp_for_excel", time.strftime('%Y-%m-%d %H:%M:%S')),
+                focused_summary_source_count=focused_count_for_excel # ADDED
             )
 
         excel_file_bytes = excel_handler.to_excel_bytes(df_item_details, df_consolidated_summary_excel)
+        
+        # Use a consistent timestamp for the filename
+        filename_timestamp = st.session_state.get("batch_timestamp_for_excel", time.strftime('%Y%m%d-%H%M%S')).replace(":", "").replace("-", "")
+        
         st.download_button(
             label="📥 Download Results as Excel",
             data=excel_file_bytes,
-            file_name=f"dora_results_{time.strftime('%Y%m%d-%H%M%S')}.xlsx",
+            file_name=f"dora_results_{filename_timestamp}.xlsx", # Updated filename
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
             key="download_excel_button"
         )
 
+    # Display consolidated summary and sources (if any)
     ui_manager.display_consolidated_summary_and_sources(
         st.session_state.consolidated_summary_text,
-        st.session_state.focused_summary_sources,
-        st.session_state.last_extract_queries
+        st.session_state.focused_summary_sources, # This is the list of dicts
+        st.session_state.last_extract_queries # Pass Q1, Q2 texts
     )
-    ui_manager.display_individual_results()
+    # Display individual results (if any)
+    ui_manager.display_individual_results() # This function needs access to st.session_state.results_data
 
 with log_container:
-    ui_manager.display_processing_log()
+    ui_manager.display_processing_log() # This function needs access to st.session_state.processing_log
 
 st.markdown("---")
 st.caption(f"D.O.R.A v{config.APP_VERSION}")
