@@ -4,7 +4,7 @@ https://github.com/thisisrayner/project-zhenghe
 
 The **Research** **Agent** For **Domain**-Wide **Overview** and **Insights**.
 
-D.O.R.A (Domain Overview & Research Agent) is a Streamlit application that empowers users to input keywords, perform Google searches (automatically enhanced by LLM-generated queries if an LLM is configured), extract metadata and main content from resulting URLs (supporting HTML and PDF text), and leverage a Large Language Model (LLM) – currently configured for **Google Gemini** – to summarize content, extract specific information with relevancy scoring, and generate a consolidated overview. Results are displayed interactively with visual cues for relevance, can be downloaded as an Excel file, and are also recorded to a Google Sheet.
+D.O.R.A. is a Streamlit application that empowers users to input keywords, perform Google searches (automatically enhanced by LLM-generated queries if an LLM is configured), extract metadata and main content from resulting URLs (supporting HTML and PDF text), and leverage a Large Language Model (LLM) – currently configured for **Google Gemini** – to summarize content, extract specific information with relevancy scoring, and generate a consolidated overview. Results are displayed interactively with visual cues for relevance, can be downloaded as an Excel file, and are also recorded to a Google Sheet.
 
 The project is designed with a high degree of modularity, with `app.py` acting as an orchestrator for specialized modules. This facilitates future enhancements, including the potential addition of a separate API layer for programmatic access.
 
@@ -20,22 +20,29 @@ The project is designed with a high degree of modularity, with `app.py` acting a
 *   **LLM Integration (Google Gemini):**
     *   **Individual Summaries:** If an LLM is configured, it automatically generates summaries of each successfully scraped web page's/document's content.
     *   **Specific Information Extraction & Relevancy Scoring:** Extracts user-defined information (for up to two specific queries, Q1 and Q2) from page/document content. The LLM also assigns a relevancy score (1/5 to 5/5) indicating how well the content matches each extraction query. LLM prompts for this feature instruct the LLM to output only plain text.
-    *   **Consolidated Overview:** Automatically generates a synthesized overview.
-        *   If specific information query/queries (Q1 and/or Q2) were provided and items achieve a relevancy score of 3/5 or higher for *either* query, the consolidated summary will be **focused**. It will use the full text of these high-scoring Q1/Q2 extractions. The LLM is prompted to provide a more detailed and potentially longer overview (aiming for up to 2x the length of a general summary) based on these specific, relevant snippets. The "Main Query 1" serves as the primary contextual theme, and "Additional Query 2" (if provided and relevant snippets are found) is used by the LLM to enrich the overview with more nuanced details. The overview concludes with a concise 'TL;DR:' section highlighting key takeaways as dash-prefixed points.
-        *   If no specific information queries were used, or if no items achieved a relevancy score of 3/5 or higher for any provided specific query, a **general consolidated summary** is created from all valid individual LLM-generated item summaries.
-        *   All consolidated overviews are instructed to be generated in plain text to avoid unwanted formatting.
+    *   **Consolidated Overview:** Automatically generates a synthesized overview, structured as a main narrative followed by a distinct "TL;DR:" section.
+        *   The main narrative is presented with paragraphs separated by blank lines (as per LLM prompt instructions). The "TL;DR:" section contains 3-5 key takeaways, each starting with a dash (`- `) and intended to be on a new line, which renders as a bulleted list in the UI.
+        *   **Focused Overview:** If specific information query/queries (Q1 and/or Q2) were provided and items achieve a relevancy score of 3/5 or higher for *either* query, the consolidated summary will be **focused**.
+            *   It uses the full text of these high-scoring Q1/Q2 extractions.
+            *   The LLM is prompted to provide a more detailed and potentially longer overview based on these specific, relevant snippets.
+            *   "Main Query 1" (Q1) serves as the primary contextual theme.
+            *   "Additional Query 2" (Q2), if provided and relevant high-scoring snippets are found, is used by the LLM to enrich the Q1-focused narrative with more nuanced details that complement or expand upon Q1 findings.
+        *   **General Overview:** If no specific information queries were used, or if no items achieved a relevancy score of 3/5 or higher for any provided specific query, a **general consolidated summary** is created from all valid individual LLM-generated item summaries. This also follows the narrative + TL;DR structure.
+        *   All consolidated overviews are LLM-generated as plain text (with intentional newlines for formatting) to ensure correct rendering in the UI.
 *   **Interactive UI & Results Display:**
     *   Built with Streamlit for easy input, configuration, and viewing of results and processing logs.
     *   **Visual Relevancy Cues:** Individually processed items in the results list are prefixed with visual markers based on relevancy scores for Q1 and Q2.
     *   A 🤖 marker for any item originating from an LLM-generated search query.
     *   A 📄 marker for PDF documents.
-    *   An expander below a focused consolidated summary lists the specific source items (URL, query type, score) that contributed to its generation.
+    *   An expander below a focused consolidated summary lists the specific source items (URL, query type, query text, score) that contributed to its generation.
+    *   The application version is displayed in the page footer.
 *   **Google Sheets Integration:**
     *   Stores detailed results, including a batch summary row and individual item rows, in a structured Google Sheet.
 *   **Download Results:** Option to download all processed item details and the consolidated summary into an Excel (`.xlsx`) file.
 *   **Safeguards & Performance:**
     *   **Retry Mechanisms:** Implemented for Google Custom Search API calls and LLM API calls to handle transient errors and rate limits using exponential backoff.
     *   **LLM Caching:** Caches results from LLM functions (`@st.cache_data`) to improve performance on repeated identical requests and reduce API calls.
+    *   **LLM Request Throttling (Configurable):** To help manage API rate limits (especially on free tiers), a conditional throttling mechanism can be configured. If the number of "results desired per keyword" meets a defined threshold, a configurable delay is introduced between the LLM processing of individual items.
 *   **Modular Design & Configuration:**
     *   Code is separated into functional modules. `app.py` serves as the main orchestrator.
     *   API keys and settings are managed via Streamlit Secrets (`secrets.toml`).
@@ -85,6 +92,15 @@ To run this application, you will need the codebase and the following:
     # OPENAI_MODEL_SUMMARIZE = "gpt-3.5-turbo" 
     # OPENAI_MODEL_EXTRACT = "gpt-3.5-turbo"
 
+    # Optional: LLM Request Throttling (to help stay within free tier RPM limits)
+    # Number of 'results per keyword' (from UI slider) at or above which throttling activates.
+    # Default is 999 (throttling effectively off unless delay is also set and non-zero).
+    # LLM_THROTTLING_THRESHOLD_RESULTS = 6
+
+    # Delay in seconds to apply after each item's LLM processing if throttling is active.
+    # Default is 0.0 (no delay). Set to a value like 2.0 or 4.0 if threshold is met.
+    # LLM_ITEM_REQUEST_DELAY_SECONDS = 2.0 
+
     # Google Sheets Integration
     SPREADSHEET_ID = "YOUR_GOOGLE_SHEET_ID_FROM_ITS_URL"
     WORKSHEET_NAME = "Sheet1" 
@@ -101,32 +117,30 @@ From the root directory of the project:
 streamlit run app.py
 
 
+
 Access D.O.R.A in your browser, typically at http://localhost:8501.
 Usage
 
-    Navigate to the application URL.
+      
+Navigate to the application URL.
+Enter initial search keywords.
+Configure the number of results per keyword.
+Optionally, provide "Main Query 1" and "Additional Query 2" for specific information extraction and to guide LLM-generated searches and focused consolidated overviews.
+Click "🚀 Start Search & Analysis".
+View progress (via a general spinner in `app.py` and detailed messages in the log), results, and the consolidated overview. If the overview was focused, an expander will show the source items used.
+Expand the "📜 View Processing Log" for details, including specific status updates like `LOG_STATUS:` messages.
+Download results via the "📥 Download Results as Excel" button.
 
-    Enter initial search keywords.
+ 
 
-    Configure the number of results per keyword.
-
-    Optionally, provide "Main Query 1" and "Additional Query 2" for specific information extraction and to guide LLM-generated searches and focused consolidated overviews.
-
-    Click "🚀 Start Search & Analysis".
-
-    View progress, results, and the consolidated overview. If the overview was focused, an expander will show the source items used.
-
-    Expand the "📜 View Processing Log" for details.
-
-    Download results via the "📥 Download Results as Excel" button.
-```
-Note: LLM-enhanced query generation and individual item summarization/extraction are automatic features that run if a valid LLM API key is provided.
-
-## Important Note for Contributing Agents
+Note: LLM-enhanced query generation and individual item summarization/extraction are automatic features that run if a valid LLM API key is provided. Final status messages (success, warning, error) are displayed by app.py based on information returned by the processing modules.
+Important Note for Contributing Agents
 
 When modifying the codebase (app.py, modules/*.py):
 
     Provide Options First: When asked for input on code design, solutions to problems, or ideas for implementation, first present a set of options or a discussion of possibilities. Do not proceed directly to writing or modifying code based on a potential solution until explicitly instructed to do so after the options have been reviewed.
+
+    Return Status, Don't Directly Update UI for Final Process Status: Avoid direct calls to st.error, st.warning, st.info, or st.success from within long-running processing functions in modules like process_manager.py if these calls are intended to communicate the final overall status of the operation. Such calls can trigger premature Streamlit re-runs. Instead, these functions should return status information (e.g., by appending specific LOG_STATUS:TYPE:Message entries to a log list, or by returning dedicated status variables). The main app.py script should then be responsible for interpreting this returned status and displaying the final UI messages. Progress indicators like st.spinner (if managed by app.py) or print() statements for terminal debugging within modules are generally fine.
 
     Always provide the FULL and COMPLETE code for the modified file(s). Do not provide only snippets or omit sections like docstrings or existing function implementations unless explicitly asked to do so for brevity in a specific, isolated discussion. The primary user will be copy-pasting the entire file content.
 
