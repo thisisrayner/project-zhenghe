@@ -1,9 +1,9 @@
 # modules/ui_manager.py
-# Version 1.1.9:
-# - Fixed NameError: 'llm_key_available' not defined in display_individual_results.
-#   Now retrieves llm_key_available status from st.session_state.app_config.
+# Version 1.1.10:
+# - Corrected logic for displaying "LLM processing disabled" / "No insights for item" captions.
+# - Added debug print for app_config within display_individual_results.
 # Previous versions:
-# - Version 1.1.8: Fixed display of relevancy scores for Q1/Q2 in individual item expanders.
+# - Version 1.1.9: Fixed NameError: 'llm_key_available' in display_individual_results.
 
 """
 Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
@@ -11,12 +11,9 @@ Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R
 
 import streamlit as st
 from typing import Dict, Any, Optional, Tuple, List, Set
-# from modules import config # Avoid direct import if passing/using session_state for config
+# from modules import config # Avoid direct import if using session_state for config
 import re
 import html 
-
-# ... (sanitize_text_for_markdown, _parse_score_from_extraction, get_display_prefix_for_item - unchanged from v1.1.8) ...
-# ... (render_sidebar, apply_custom_css, display_consolidated_summary_and_sources - unchanged from v1.1.8) ...
 
 # --- Sanitization Helper ---
 def sanitize_text_for_markdown(text: Optional[str]) -> str:
@@ -58,6 +55,7 @@ def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str:
     return prefix
 
 def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]:
+    # ... (Unchanged from v1.1.9 - ensure 'config.AppConfig' type hint is valid in your environment) ...
     with st.sidebar:
         st.subheader("Search Parameters")
         keywords_input_val: str = st.text_input("Keywords (comma-separated):", value=st.session_state.get('last_keywords', ""), key="keywords_text_input_main", help="Enter comma-separated keywords. Press Enter to apply.")
@@ -65,7 +63,7 @@ def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str]
         num_results_wanted_per_keyword: int = st.slider("Number of successfully scraped results per keyword:", 1, 10, default_slider_val, key="num_results_slider")
         
         llm_provider_display = "N/A"
-        llm_key_available_sidebar: bool = False # Local to sidebar
+        llm_key_available_sidebar: bool = False 
         model_display_name: str = "N/A"
 
         if cfg and hasattr(cfg, 'llm'):
@@ -101,11 +99,14 @@ def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str]
         st.caption("📄 LLM Summaries for items will be generated if LLM available.")
     return keywords_input_val, num_results_wanted_per_keyword, returned_queries, start_button_val
 
+
 def apply_custom_css():
+    # ... (Unchanged from v1.1.9) ...
     green_button_css = """<style>div[data-testid="stButton"] > button:not(:disabled)[kind="primary"] {background-color: #4CAF50; color: white; border: 1px solid #4CAF50;} div[data-testid="stButton"] > button:not(:disabled)[kind="primary"]:hover {background-color: #45a049; color: white; border: 1px solid #45a049;} div[data-testid="stButton"] > button:not(:disabled)[kind="primary"]:active {background-color: #3e8e41; color: white; border: 1px solid #3e8e41;} div[data-testid="stButton"] > button:disabled[kind="secondary"] {background-color: #f0f2f6; color: rgba(38, 39, 48, 0.4); border: 1px solid rgba(38, 39, 48, 0.2);}</style>"""
     st.markdown(green_button_css, unsafe_allow_html=True)
 
 def display_consolidated_summary_and_sources(summary_text: Optional[str], focused_sources: Optional[List[Dict[str, Any]]], last_extract_queries: List[str]) -> None:
+    # ... (Unchanged from v1.1.9) ...
     if summary_text:
         st.markdown("---"); st.subheader("✨ Consolidated Overview Result")
         is_error_message = "LLM_PROCESSOR_ERROR:" in summary_text
@@ -130,22 +131,33 @@ def display_consolidated_summary_and_sources(summary_text: Optional[str], focuse
     elif 'last_keywords' in st.session_state and st.session_state.last_keywords:
          st.info("Consolidated overview is not available for this run.")
 
+
 def display_individual_results():
     if st.session_state.get('results_data'):
         st.subheader(f"📊 Individually Processed Content ({len(st.session_state.results_data)} item(s))")
         
-        # --- START: Determine llm_key_available within this function's scope ---
         llm_key_available: bool = False
-        app_cfg = st.session_state.get('app_config') # Assuming app_config is in session state
+        app_cfg = st.session_state.get('app_config')
+        
+        # --- ADDED DEBUG PRINT ---
+        print(f"UI_MANAGER DEBUG: app_cfg in display_individual_results: {app_cfg}")
+        if app_cfg:
+            print(f"UI_MANAGER DEBUG: app_cfg.llm provider: {getattr(getattr(app_cfg, 'llm', None), 'provider', 'LLM_ATTR_MISSING')}")
+            print(f"UI_MANAGER DEBUG: app_cfg.llm google_gemini_api_key: {'SET' if getattr(getattr(app_cfg, 'llm', None), 'google_gemini_api_key', None) else 'NOT_SET'}")
+        # --- END DEBUG PRINT ---
+
         if app_cfg and hasattr(app_cfg, 'llm'):
-            llm_key_available = (app_cfg.llm.provider == "google" and app_cfg.llm.google_gemini_api_key) or \
-                                  (app_cfg.llm.provider == "openai" and app_cfg.llm.openai_api_key)
-        # --- END: Determine llm_key_available ---
+            llm_cfg = app_cfg.llm # For easier access
+            llm_key_available = (llm_cfg.provider == "google" and llm_cfg.google_gemini_api_key) or \
+                                  (llm_cfg.provider == "openai" and llm_cfg.openai_api_key)
+        print(f"UI_MANAGER DEBUG: llm_key_available evaluated to: {llm_key_available}")
+
 
         llm_gen_kws_for_display = st.session_state.get('llm_generated_keywords_set_for_display', set())
         last_extract_queries_for_display = st.session_state.get('last_extract_queries', ["", ""]) 
         
         for i, item_val_display in enumerate(st.session_state.results_data):
+            # ... (expander title setup - unchanged from v1.1.9) ...
             display_title_ui = item_val_display.get('page_title') or item_val_display.get('og_title') or \
                                item_val_display.get('search_title') or item_val_display.get('pdf_document_title') or "Untitled"
             score_emoji_prefix = get_display_prefix_for_item(item_val_display)
@@ -157,11 +169,12 @@ def display_individual_results():
             expander_title_ui = (f"{full_prefix}"
                                  f"{item_val_display.get('keyword_searched','Unknown Keyword')} | "
                                  f"{display_title_ui} ({item_val_display.get('url', 'No URL')})").replace("  ", " ").strip()
+
             with st.expander(expander_title_ui):
+                # ... (URL, Content Type, Scraping Error, Metadata, Main Text Popover - unchanged from v1.1.9) ...
                 st.markdown(f"**URL:** [{item_val_display.get('url')}]({item_val_display.get('url')})")
                 st.caption(f"Content Type: {item_val_display.get('content_type', 'N/A')}")
-                if item_val_display.get('scraping_error'):
-                    st.error(f"Scraping Error: {item_val_display['scraping_error']}")
+                if item_val_display.get('scraping_error'): st.error(f"Scraping Error: {item_val_display['scraping_error']}")
                 with st.container(border=True): 
                     st.markdown("**Scraped Metadata:**")
                     st.markdown(f"  - **Title:** {sanitize_text_for_markdown(item_val_display.get('page_title', 'N/A'))}\n" 
@@ -200,14 +213,18 @@ def display_individual_results():
                             insights_container.markdown(f"    *Relevancy Score for this item: {score_value}/5*")
                         insights_container.markdown(raw_extracted_content)
                 
-                if not has_llm_insights and llm_key_available: # Now llm_key_available is defined
-                     insights_container.caption("No specific LLM insights (summary/extractions) generated or available for this item.")
-                elif not llm_key_available:
-                     insights_container.caption("LLM processing disabled; no LLM insights generated.")
+                # --- REFINED CAPTION LOGIC ---
+                if not llm_key_available: # Check this first: Is LLM system globally disabled?
+                    insights_container.caption("LLM processing disabled (no API key configured); no LLM insights could be generated.")
+                elif not has_llm_insights: # LLM is available, but this specific item has no insights
+                    insights_container.caption("No specific LLM insights (summary/extractions) generated or available for this item.")
+                # If llm_key_available is True AND has_llm_insights is True, no caption is needed here.
+                # --- END REFINED CAPTION LOGIC ---
                 
                 st.caption(f"Item Timestamp: {item_val_display.get('timestamp')}")
 
 def display_processing_log():
+    # ... (Unchanged from v1.1.9) ...
     if st.session_state.get('processing_log'):
         with st.expander("📜 View Processing Log", expanded=False):
             log_content = "\n".join(st.session_state.processing_log)
