@@ -345,56 +345,43 @@ Module Docstring:
 Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
 ```
 
-### def sanitize_text_for_markdown(text: Optional[str]) -> str
+### def get_random_spinner_message() -> str
 Docstring:
 ```text
-Sanitizes text to prevent common markdown rendering issues, especially from LLM output.
-Escapes markdown special characters. Intended for text where no markdown is desired.
+Returns a randomly selected processing message for the st.spinner.
 ```
+
+### def sanitize_text_for_markdown(text: Optional[str]) -> str
+Docstring:
+[No docstring provided]
 
 ### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
 Docstring:
-```text
-Parses a relevancy score from a string that starts with "Relevancy Score: X/5".
-This is a helper primarily for get_display_prefix_for_item if scores are embedded in text.
-```
+[No docstring provided]
 
 ### def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str
 Docstring:
-```text
-Determines a display prefix (emoji) for an item based on its highest relevancy score.
-Assumes scores 'llm_relevancy_score_q1' and 'llm_relevancy_score_q2' are already parsed integers.
-```
+[No docstring provided]
 
 ### def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]
 Docstring:
-```text
-Renders the sidebar UI elements and returns user inputs.
-```
+[No docstring provided]
 
 ### def apply_custom_css()
 Docstring:
-```text
-Applies custom CSS for styling elements like buttons.
-```
+[No docstring provided]
 
 ### def display_consolidated_summary_and_sources(summary_text: Optional[str], focused_sources: Optional[List[Dict[str, Any]]], last_extract_queries: List[str]) -> None
 Docstring:
-```text
-Displays the consolidated summary and, if focused, the sources used.
-```
+[No docstring provided]
 
 ### def display_individual_results()
 Docstring:
-```text
-Displays individual processed items with their details and LLM insights.
-```
+[No docstring provided]
 
 ### def display_processing_log()
 Docstring:
-```text
-Displays the processing log.
-```
+[No docstring provided]
 
 ---
 
