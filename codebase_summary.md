@@ -432,7 +432,8 @@ Returns:
 Module Docstring:
 ```text
 Handles the main workflow of searching, scraping, LLM processing, and data aggregation.
-Communicates final processing status back via specific log messages.
+Provides live intermediate progress updates via Streamlit UI elements and communicates
+final processing status back via specific log messages for app.py to display.
 ```
 
 ### class FocusedSummarySource(TypedDict)
