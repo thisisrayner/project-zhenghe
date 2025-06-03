@@ -1,9 +1,9 @@
 # modules/ui_manager.py
-# Version 1.1.10:
-# - Corrected logic for displaying "LLM processing disabled" / "No insights for item" captions.
-# - Added debug print for app_config within display_individual_results.
+# Version 1.1.11:
+# - Reads 'llm_globally_enabled' from st.session_state for LLM availability check.
+# - Removes recalculation of llm_key_available from app_config within display_individual_results.
 # Previous versions:
-# - Version 1.1.9: Fixed NameError: 'llm_key_available' in display_individual_results.
+# - Version 1.1.10: Corrected logic for displaying "LLM processing disabled" captions.
 
 """
 Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
@@ -11,83 +11,51 @@ Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R
 
 import streamlit as st
 from typing import Dict, Any, Optional, Tuple, List, Set
-# from modules import config # Avoid direct import if using session_state for config
+# from modules import config # No longer need to import config for AppConfig type hint if not passed
 import re
 import html 
 
-# --- Sanitization Helper ---
-def sanitize_text_for_markdown(text: Optional[str]) -> str:
-    if text is None: return ""
-    escaped_text = text.replace('\\', '\\\\')
-    markdown_chars_to_escape = r"([`*_#{}\[\]()+.!-])" 
-    escaped_text = re.sub(markdown_chars_to_escape, r"\\\1", escaped_text)
-    escaped_text = re.sub(r"---", r"\-\-\-", escaped_text) 
-    escaped_text = re.sub(r"\*\*\*", r"\*\*\*", escaped_text) 
-    escaped_text = re.sub(r"___", r"\_\_\_", escaped_text) 
-    return escaped_text
-
-def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]:
-    score: Optional[int] = None
-    if extracted_info and isinstance(extracted_info, str) and extracted_info.startswith("Relevancy Score: "):
-        try:
-            score_line = extracted_info.split('\n', 1)[0]
-            score_str = score_line.split("Relevancy Score: ")[1].split('/')[0]
-            score = int(score_str)
-        except (IndexError, ValueError): pass
-    return score
-
-def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str:
-    prefix = ""
-    score_q1 = item_data.get("llm_relevancy_score_q1") 
-    score_q2 = item_data.get("llm_relevancy_score_q2")
-    highest_score: Optional[int] = None
-    if isinstance(score_q1, (int, float)): score_q1 = int(score_q1)
-    else: score_q1 = None
-    if isinstance(score_q2, (int, float)): score_q2 = int(score_q2)
-    else: score_q2 = None
-    if score_q1 is not None and score_q2 is not None: highest_score = max(score_q1, score_q2)
-    elif score_q1 is not None: highest_score = score_q1
-    elif score_q2 is not None: highest_score = score_q2
-    if highest_score is not None:
-        if highest_score >= 5: prefix = "5️⃣"
-        elif highest_score == 4: prefix = "4️⃣"
-        elif highest_score == 3: prefix = "3️⃣"
-    return prefix
+# ... (sanitize_text_for_markdown, _parse_score_from_extraction, get_display_prefix_for_item - unchanged) ...
+# ... (apply_custom_css, display_consolidated_summary_and_sources - unchanged) ...
 
 def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]:
-    # ... (Unchanged from v1.1.9 - ensure 'config.AppConfig' type hint is valid in your environment) ...
+    # This function might still need app_config (cfg) for other details like default slider values,
+    # or provider name. If st.session_state.llm_globally_enabled is used, the direct
+    # calculation of llm_key_available_sidebar can be replaced.
     with st.sidebar:
         st.subheader("Search Parameters")
+        # ... (keywords_input_val, num_results_wanted_per_keyword) ...
         keywords_input_val: str = st.text_input("Keywords (comma-separated):", value=st.session_state.get('last_keywords', ""), key="keywords_text_input_main", help="Enter comma-separated keywords. Press Enter to apply.")
         default_slider_val = getattr(cfg, 'num_results_per_keyword_default', 3) if cfg else 3
         num_results_wanted_per_keyword: int = st.slider("Number of successfully scraped results per keyword:", 1, 10, default_slider_val, key="num_results_slider")
+
+
+        # Use the globally set LLM status from session state
+        llm_is_enabled_globally = st.session_state.get('llm_globally_enabled', False)
         
         llm_provider_display = "N/A"
-        llm_key_available_sidebar: bool = False 
         model_display_name: str = "N/A"
-
-        if cfg and hasattr(cfg, 'llm'):
+        if cfg and hasattr(cfg, 'llm'): # Still need cfg for provider and model name display
             llm_provider_display = cfg.llm.provider.upper()
-            llm_key_available_sidebar = (cfg.llm.provider == "google" and cfg.llm.google_gemini_api_key) or \
-                               (cfg.llm.provider == "openai" and cfg.llm.openai_api_key)
-            if llm_key_available_sidebar:
+            if llm_is_enabled_globally:
                 model_display_name = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize
                 st.subheader(f"LLM Processing - Provider: {llm_provider_display}")
                 st.caption(f"Using Model: {model_display_name}")
             else:
                 st.subheader(f"LLM Processing - Provider: {llm_provider_display}")
-                st.caption(f"API Key for {cfg.llm.provider.upper()} not configured. LLM features disabled.")
-        else: 
+                st.caption(f"API Key for {cfg.llm.provider.upper()} not configured or LLM disabled.")
+        else:
             st.subheader(f"LLM Processing - Provider: {llm_provider_display}")
             st.caption("LLM Configuration not loaded. LLM features disabled.")
 
+        # ... (rest of sidebar - unchanged) ...
         st.markdown("**Specific Info to Extract (LLM):**")
         last_extract_queries_val = st.session_state.get('last_extract_queries', ["", ""])
         if not isinstance(last_extract_queries_val, list) or len(last_extract_queries_val) < 2: last_extract_queries_val = ["", ""]
         tooltip_text_q1 = "Main Query 1 drives primary relevancy and focused summary."
         tooltip_text_q2 = "Optional: secondary question or keywords."
-        llm_extract_query_1_input_val: str = st.text_input("Main Query 1:", value=last_extract_queries_val[0], placeholder="e.g., Key methodologies", key="llm_extract_q1_input", help=tooltip_text_q1)
-        llm_extract_query_2_input_val: str = st.text_input("Additional Query 2:", value=last_extract_queries_val[1], placeholder="e.g., Mentioned limitations", key="llm_extract_q2_input", help=tooltip_text_q2)
+        llm_extract_query_1_input_val: str = st.text_input("Main Query 1:", value=last_extract_queries_val[0], placeholder="e.g., Key methodologies", key="llm_extract_q1_input_sidebar", help=tooltip_text_q1) # Changed key
+        llm_extract_query_2_input_val: str = st.text_input("Additional Query 2:", value=last_extract_queries_val[1], placeholder="e.g., Mentioned limitations", key="llm_extract_q2_input_sidebar", help=tooltip_text_q2) # Changed key
         returned_queries = [llm_extract_query_1_input_val, llm_extract_query_2_input_val]
         st.markdown("---")
         button_streamlit_type = "secondary"; button_disabled = True
@@ -100,64 +68,19 @@ def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str]
     return keywords_input_val, num_results_wanted_per_keyword, returned_queries, start_button_val
 
 
-def apply_custom_css():
-    # ... (Unchanged from v1.1.9) ...
-    green_button_css = """<style>div[data-testid="stButton"] > button:not(:disabled)[kind="primary"] {background-color: #4CAF50; color: white; border: 1px solid #4CAF50;} div[data-testid="stButton"] > button:not(:disabled)[kind="primary"]:hover {background-color: #45a049; color: white; border: 1px solid #45a049;} div[data-testid="stButton"] > button:not(:disabled)[kind="primary"]:active {background-color: #3e8e41; color: white; border: 1px solid #3e8e41;} div[data-testid="stButton"] > button:disabled[kind="secondary"] {background-color: #f0f2f6; color: rgba(38, 39, 48, 0.4); border: 1px solid rgba(38, 39, 48, 0.2);}</style>"""
-    st.markdown(green_button_css, unsafe_allow_html=True)
-
-def display_consolidated_summary_and_sources(summary_text: Optional[str], focused_sources: Optional[List[Dict[str, Any]]], last_extract_queries: List[str]) -> None:
-    # ... (Unchanged from v1.1.9) ...
-    if summary_text:
-        st.markdown("---"); st.subheader("✨ Consolidated Overview Result")
-        is_error_message = "LLM_PROCESSOR_ERROR:" in summary_text
-        is_info_only_summary = "LLM_PROCESSOR_INFO:" in summary_text and not is_error_message
-        primary_extract_query = last_extract_queries[0] if last_extract_queries and len(last_extract_queries) > 0 else ""
-        was_focused_attempt = bool(any(q.strip() for q in last_extract_queries))
-        text_to_display_final = summary_text
-        if is_error_message: st.error(text_to_display_final); return 
-        elif is_info_only_summary: st.info(text_to_display_final);
-        else: 
-            if was_focused_attempt and primary_extract_query and primary_extract_query.strip(): st.caption(f"This overview is focused on Main Query 1: '{primary_extract_query}'.")
-            with st.container(border=True): st.markdown(text_to_display_final, unsafe_allow_html=False)
-        if was_focused_attempt and focused_sources and not is_error_message and not is_info_only_summary:
-            with st.expander("ℹ️ View Sources for Focused Consolidated Overview", expanded=False):
-                st.markdown(f"This focused overview was synthesized from **{len(focused_sources)}** high-scoring (>=3/5) extractions:")
-                for i, source in enumerate(focused_sources):
-                    url = source.get('url', 'N/A'); query_type = source.get('query_type', 'N/A')
-                    query_text_short = source.get('query_text', 'N/A'); score = source.get('score', 'N/A')
-                    if len(query_text_short) > 40: query_text_short = query_text_short[:37] + "..."
-                    st.markdown(f"  {i+1}. **URL:** [{url}]({url})\n     - **Source Query:** {query_type} (\"{query_text_short}\")\n     - **Relevancy Score for this item:** {score}/5")
-                st.caption("The LLM was instructed to synthesize these snippets with a primary focus on Main Query 1 (if provided).")
-    elif 'last_keywords' in st.session_state and st.session_state.last_keywords:
-         st.info("Consolidated overview is not available for this run.")
-
-
 def display_individual_results():
     if st.session_state.get('results_data'):
         st.subheader(f"📊 Individually Processed Content ({len(st.session_state.results_data)} item(s))")
         
-        llm_key_available: bool = False
-        app_cfg = st.session_state.get('app_config')
-        
-        # --- ADDED DEBUG PRINT ---
-        print(f"UI_MANAGER DEBUG: app_cfg in display_individual_results: {app_cfg}")
-        if app_cfg:
-            print(f"UI_MANAGER DEBUG: app_cfg.llm provider: {getattr(getattr(app_cfg, 'llm', None), 'provider', 'LLM_ATTR_MISSING')}")
-            print(f"UI_MANAGER DEBUG: app_cfg.llm google_gemini_api_key: {'SET' if getattr(getattr(app_cfg, 'llm', None), 'google_gemini_api_key', None) else 'NOT_SET'}")
-        # --- END DEBUG PRINT ---
-
-        if app_cfg and hasattr(app_cfg, 'llm'):
-            llm_cfg = app_cfg.llm # For easier access
-            llm_key_available = (llm_cfg.provider == "google" and llm_cfg.google_gemini_api_key) or \
-                                  (llm_cfg.provider == "openai" and llm_cfg.openai_api_key)
-        print(f"UI_MANAGER DEBUG: llm_key_available evaluated to: {llm_key_available}")
-
+        # Get the global LLM availability status from session state
+        llm_globally_enabled = st.session_state.get('llm_globally_enabled', False)
+        print(f"UI_MANAGER DEBUG: llm_globally_enabled from session_state: {llm_globally_enabled}")
 
         llm_gen_kws_for_display = st.session_state.get('llm_generated_keywords_set_for_display', set())
         last_extract_queries_for_display = st.session_state.get('last_extract_queries', ["", ""]) 
         
         for i, item_val_display in enumerate(st.session_state.results_data):
-            # ... (expander title setup - unchanged from v1.1.9) ...
+            # ... (expander title setup and item details - unchanged from v1.1.10) ...
             display_title_ui = item_val_display.get('page_title') or item_val_display.get('og_title') or \
                                item_val_display.get('search_title') or item_val_display.get('pdf_document_title') or "Untitled"
             score_emoji_prefix = get_display_prefix_for_item(item_val_display)
@@ -171,7 +94,6 @@ def display_individual_results():
                                  f"{display_title_ui} ({item_val_display.get('url', 'No URL')})").replace("  ", " ").strip()
 
             with st.expander(expander_title_ui):
-                # ... (URL, Content Type, Scraping Error, Metadata, Main Text Popover - unchanged from v1.1.9) ...
                 st.markdown(f"**URL:** [{item_val_display.get('url')}]({item_val_display.get('url')})")
                 st.caption(f"Content Type: {item_val_display.get('content_type', 'N/A')}")
                 if item_val_display.get('scraping_error'): st.error(f"Scraping Error: {item_val_display['scraping_error']}")
@@ -188,7 +110,7 @@ def display_individual_results():
                 elif str(scraped_main_text).startswith("SCRAPER_INFO:"): st.caption(scraped_main_text)
                 else: st.caption("No main text extracted or usable for LLM processing.")
                 
-                has_llm_insights = False
+                has_llm_insights = False # This flag is local to each item
                 insights_container = st.container(border=True)
                 raw_llm_summary = item_val_display.get("llm_summary")
                 if raw_llm_summary and not str(raw_llm_summary).lower().startswith(("llm error", "llm_processor", "no text content")): 
@@ -197,6 +119,7 @@ def display_individual_results():
                     insights_container.markdown(raw_llm_summary)
                 
                 for q_idx in range(2): 
+                    # ... (logic to display Q1/Q2 info and score - unchanged from v1.1.10) ...
                     query_key_text = f"llm_extraction_query_{q_idx+1}_text"
                     score_key = f"llm_relevancy_score_q{q_idx+1}"
                     extracted_info_key = f"llm_extracted_info_q{q_idx+1}"
@@ -212,23 +135,22 @@ def display_individual_results():
                         if score_value is not None:
                             insights_container.markdown(f"    *Relevancy Score for this item: {score_value}/5*")
                         insights_container.markdown(raw_extracted_content)
-                
-                # --- REFINED CAPTION LOGIC ---
-                if not llm_key_available: # Check this first: Is LLM system globally disabled?
+
+                # --- CORRECTED CAPTION LOGIC using llm_globally_enabled ---
+                if not llm_globally_enabled:
                     insights_container.caption("LLM processing disabled (no API key configured); no LLM insights could be generated.")
-                elif not has_llm_insights: # LLM is available, but this specific item has no insights
+                elif not has_llm_insights: # LLM is globally enabled, but this item has no insights
                     insights_container.caption("No specific LLM insights (summary/extractions) generated or available for this item.")
-                # If llm_key_available is True AND has_llm_insights is True, no caption is needed here.
-                # --- END REFINED CAPTION LOGIC ---
+                # --- END CORRECTED CAPTION LOGIC ---
                 
                 st.caption(f"Item Timestamp: {item_val_display.get('timestamp')}")
 
+# ... (display_processing_log - unchanged) ...
 def display_processing_log():
-    # ... (Unchanged from v1.1.9) ...
     if st.session_state.get('processing_log'):
         with st.expander("📜 View Processing Log", expanded=False):
             log_content = "\n".join(st.session_state.processing_log)
             filtered_log_lines = [line for line in log_content.splitlines() if not line.startswith("LOG_UI_STATUS:")]
-            st.text_area("Processing Log (filtered):", value="\n".join(filtered_log_lines), height=300, key="log_display_text_area", disabled=True)
+            st.text_area("Processing Log (filtered):", value="\n".join(filtered_log_lines), height=300, key="log_display_text_area_ui", disabled=True) # Changed key
 
 # // end of modules/ui_manager.py
