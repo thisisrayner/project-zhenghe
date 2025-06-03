@@ -176,13 +176,13 @@ Returns:
 ## File: modules/config.py
 Module Docstring:
 ```text
-Configuration management for the Streamlit Keyword Search & Analysis Tool.
+Configuration management for D.O.R.A. - The Research Agent.
 
 This module defines dataclasses for structuring configuration parameters and
 provides a function to load these configurations primarily from Streamlit
 secrets (`secrets.toml`). It handles settings for Google Search, LLM providers
-(Google Gemini, OpenAI), and Google Sheets integration. It also defines
-the application's version.
+(Google Gemini, OpenAI), Google Sheets integration, application-specific
+behaviors like LLM request throttling, and defines the application's version.
 ```
 
 ### class GoogleSearchConfig
@@ -195,6 +195,19 @@ Configuration specific to Google Custom Search API.
 Docstring:
 ```text
 Configuration for Large Language Model (LLM) interactions.
+
+Attributes:
+    provider: The LLM provider to use (e.g., "google", "openai").
+    openai_api_key: API key for OpenAI.
+    openai_model_summarize: The OpenAI model for summarization tasks.
+    openai_model_extract: The OpenAI model for extraction tasks.
+    google_gemini_api_key: API key for Google Gemini.
+    google_gemini_model: The specific Google Gemini model to use.
+    max_input_chars: Max characters to send to LLM (practical limit).
+    llm_item_request_delay_seconds: Delay in seconds to apply after each item's
+        LLM processing, if throttling is active.
+    llm_throttling_threshold_results: The number of results per keyword at or
+        above which LLM request throttling is activated.
 ```
 
 ### class GoogleSheetsConfig
@@ -214,8 +227,8 @@ Docstring:
 ```text
 Loads application configurations from Streamlit secrets.
 
-Reads API keys, model names, sheet identifiers, and other settings
-from `.streamlit/secrets.toml`. Provides sensible defaults if some
+Reads API keys, model names, sheet identifiers, throttling parameters, and other
+settings from `.streamlit/secrets.toml`. Provides sensible defaults if some
 optional settings are not found.
 
 Returns:
