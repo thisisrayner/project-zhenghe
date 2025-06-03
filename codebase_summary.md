@@ -347,10 +347,7 @@ Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R
 
 ### def sanitize_text_for_markdown(text: Optional[str]) -> str
 Docstring:
-```text
-Sanitizes text to prevent common markdown rendering issues, especially from LLM output.
-Escapes markdown special characters. Intended for text where no markdown is desired.
-```
+[No docstring provided]
 
 ### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
 Docstring:
@@ -370,10 +367,7 @@ Docstring:
 
 ### def display_consolidated_summary_and_sources(summary_text: Optional[str], focused_sources: Optional[List[Dict[str, Any]]], last_extract_queries: List[str]) -> None
 Docstring:
-```text
-Displays the consolidated summary using st.markdown to render TL;DR lists.
-If focused, also shows sources.
-```
+[No docstring provided]
 
 ### def display_individual_results()
 Docstring:
