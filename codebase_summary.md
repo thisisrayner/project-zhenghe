@@ -304,10 +304,23 @@ Docstring:
 Extracts specific info and scores relevancy. Extracted info part is plain text.
 ```
 
-### def _parse_score_and_get_content(text_with_potential_score: str) -> Tuple[Optional[int], str]
+### def _parse_score_and_get_content(text_with_potential_score: Optional[str]) -> Tuple[Optional[int], str]
 Docstring:
 ```text
-Parses score and extracts content.
+Parses relevancy score and extracts content from LLM output.
+Expects score on the first line like "Relevancy Score: X/5".
+Uses regex for more robust parsing.
+
+Args:
+    text_with_potential_score: The string output from the LLM, potentially
+                               containing the score and extracted information.
+
+Returns:
+    A tuple containing:
+        - Optional[int]: The parsed relevancy score (1-5), or None if not found/parsed.
+        - str: The extracted content part of the text. If no score is parsed,
+               this will be the original input string. If a score is parsed,
+               this will be the text after the score line.
 ```
 
 ### def generate_consolidated_summary(summaries: Tuple[Optional[str], ...], topic_context: str, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 150000, extraction_query_for_consolidation: Optional[str] = None, secondary_query_for_enrichment: Optional[str] = None) -> Optional[str]
