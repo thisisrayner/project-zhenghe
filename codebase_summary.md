@@ -455,9 +455,12 @@ Docstring:
 
 ### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
 Docstring:
-[No docstring provided]
+```text
+A local, simpler parser for relevancy score as a fallback.
+Expects "Relevancy Score: X/5" at the beginning of the string.
+```
 
-### def run_search_and_analysis(app_config: 'config.AppConfig', keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]
+### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]
 Docstring:
 [No docstring provided]
 
