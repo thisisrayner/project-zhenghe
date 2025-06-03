@@ -345,27 +345,7 @@ Module Docstring:
 Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
 ```
 
-### def sanitize_text_for_markdown(text: Optional[str]) -> str
-Docstring:
-[No docstring provided]
-
-### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
-Docstring:
-[No docstring provided]
-
-### def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str
-Docstring:
-[No docstring provided]
-
 ### def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]
-Docstring:
-[No docstring provided]
-
-### def apply_custom_css()
-Docstring:
-[No docstring provided]
-
-### def display_consolidated_summary_and_sources(summary_text: Optional[str], focused_sources: Optional[List[Dict[str, Any]]], last_extract_queries: List[str]) -> None
 Docstring:
 [No docstring provided]
 
