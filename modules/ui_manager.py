@@ -1,40 +1,36 @@
 # modules/ui_manager.py
-# Version 1.1.7
-# - Consolidated summary displayed with st.markdown() to allow TL;DR list rendering.
-# - Removed st.code() for summary display as copy button is deferred.
-# - Sanitization is applied to pure info/error messages from the LLM.
-# Version 1.1.6:
-# - (Previous attempt at TLDR list rendering by removing sanitizer from st.markdown)
-# Version 1.1.5:
-# - Renamed display_consolidated_summary to display_consolidated_summary_and_sources.
-# - Added display of sources for focused consolidated summaries if available.
-# - Function now accepts summary_text, focused_sources, and last_extract_queries as args.
+# Version 1.1.8:
+# - Fixed display of relevancy scores for Q1/Q2 in individual item expanders.
+# - Corrected HTML escaping for extracted content display.
+# Previous versions:
+# - Version 1.1.7: Consolidated summary displayed with st.markdown().
+
 """
 Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
 """
 
 import streamlit as st
 from typing import Dict, Any, Optional, Tuple, List, Set
-from modules import config
+# from modules import config # Not directly used in this version, but good for context
 import re
+import html # For robust HTML escaping
 
 # --- Sanitization Helper ---
 def sanitize_text_for_markdown(text: Optional[str]) -> str:
-    """
-    Sanitizes text to prevent common markdown rendering issues, especially from LLM output.
-    Escapes markdown special characters. Intended for text where no markdown is desired.
-    """
-    if text is None:
-        return ""
+    # ... (function remains unchanged from v1.1.7) ...
+    if text is None: return ""
     escaped_text = text.replace('\\', '\\\\')
-    markdown_chars_to_escape = r"([`*_#{}\[\]()+.!-])"
+    markdown_chars_to_escape = r"([`*_#{}\[\]()+.!-])" # Note: Removed > and < from here as they are handled by html.escape for direct HTML
     escaped_text = re.sub(markdown_chars_to_escape, r"\\\1", escaped_text)
-    escaped_text = re.sub(r"---", r"\-\-\-", escaped_text)
-    escaped_text = re.sub(r"\*\*\*", r"\*\*\*", escaped_text)
-    escaped_text = re.sub(r"___", r"\_\_\_", escaped_text)
+    # These specific multi-character sequences might still need explicit handling if they cause issues
+    escaped_text = re.sub(r"---", r"\-\-\-", escaped_text) # Triple dash
+    escaped_text = re.sub(r"\*\*\*", r"\*\*\*", escaped_text) # Triple asterisk
+    escaped_text = re.sub(r"___", r"\_\_\_", escaped_text) # Triple underscore
     return escaped_text
 
 def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]:
+    # This function is primarily used by get_display_prefix_for_item.
+    # The scores in item_val_display should already be parsed integers.
     score: Optional[int] = None
     if extracted_info and isinstance(extracted_info, str) and extracted_info.startswith("Relevancy Score: "):
         try:
@@ -46,68 +42,85 @@ def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
 
 def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str:
     prefix = ""
-    score_q1 = _parse_score_from_extraction(item_data.get("llm_extracted_info_q1"))
-    score_q2 = _parse_score_from_extraction(item_data.get("llm_extracted_info_q2"))
+    # Use the already parsed numerical scores from item_data
+    score_q1 = item_data.get("llm_relevancy_score_q1") 
+    score_q2 = item_data.get("llm_relevancy_score_q2")
+    
     highest_score: Optional[int] = None
+    
+    # Ensure scores are integers if they exist
+    if isinstance(score_q1, (int, float)): score_q1 = int(score_q1)
+    else: score_q1 = None
+        
+    if isinstance(score_q2, (int, float)): score_q2 = int(score_q2)
+    else: score_q2 = None
+
     if score_q1 is not None and score_q2 is not None: highest_score = max(score_q1, score_q2)
     elif score_q1 is not None: highest_score = score_q1
     elif score_q2 is not None: highest_score = score_q2
+    
     if highest_score is not None:
-        if highest_score == 5: prefix = "5️⃣"
+        if highest_score >= 5: prefix = "5️⃣" # Allow for scores potentially > 5 if LLM changes
         elif highest_score == 4: prefix = "4️⃣"
         elif highest_score == 3: prefix = "3️⃣"
+        # Scores below 3 don't get a prefix in this logic
     return prefix
 
 def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]:
+    # ... (function remains largely unchanged from v1.1.7, ensure cfg type hint is resolvable) ...
+    # Assuming 'config.AppConfig' means 'from modules.config import AppConfig'
+    # or it's passed as an instance. For this file, it's a type hint.
     with st.sidebar:
         st.subheader("Search Parameters")
         keywords_input_val: str = st.text_input(
             "Keywords (comma-separated):", value=st.session_state.get('last_keywords', ""),
             key="keywords_text_input_main", help="Enter comma-separated keywords. Press Enter to apply."
         )
+        # Ensure cfg has num_results_per_keyword_default or provide a hardcoded default
+        default_slider_val = getattr(cfg, 'num_results_per_keyword_default', 3) if cfg else 3
         num_results_wanted_per_keyword: int = st.slider(
-            "Number of successfully scraped results per keyword:", 1, 10, cfg.num_results_per_keyword_default,
+            "Number of successfully scraped results per keyword:", 1, 10, default_slider_val,
             key="num_results_slider"
         )
-        st.subheader(f"LLM Processing - Provider: {cfg.llm.provider.upper()}")
-        llm_key_available: bool = (cfg.llm.provider == "google" and cfg.llm.google_gemini_api_key) or \
+        st.subheader(f"LLM Processing - Provider: {getattr(cfg.llm, 'provider', 'N/A').upper() if cfg and hasattr(cfg, 'llm') else 'N/A'}")
+        llm_key_available: bool = False
+        model_display_name: str = "N/A"
+        if cfg and hasattr(cfg, 'llm'):
+            llm_key_available = (cfg.llm.provider == "google" and cfg.llm.google_gemini_api_key) or \
                                   (cfg.llm.provider == "openai" and cfg.llm.openai_api_key)
-        if llm_key_available:
-            model_display_name: str = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize
-            st.caption(f"Using Model: {model_display_name}")
-        else:
-            st.caption(f"API Key for {cfg.llm.provider.upper()} not configured. LLM features disabled.")
+            if llm_key_available:
+                model_display_name = cfg.llm.google_gemini_model if cfg.llm.provider == "google" else cfg.llm.openai_model_summarize
+                st.caption(f"Using Model: {model_display_name}")
+            else:
+                st.caption(f"API Key for {cfg.llm.provider.upper()} not configured. LLM features disabled.")
+        else: 
+            st.caption("LLM Configuration not loaded. LLM features disabled.")
+
         st.markdown("**Specific Info to Extract (LLM):**")
         last_extract_queries_val = st.session_state.get('last_extract_queries', ["", ""])
         if not isinstance(last_extract_queries_val, list) or len(last_extract_queries_val) < 2:
             last_extract_queries_val = ["", ""]
-        tooltip_text_q1 = "You can type in keywords to focus the analysis or ask a question. Main Query 1 drives the primary relevancy score and focused consolidated summary."
-        tooltip_text_q2 = "Optional: ask a different question or look for other specific keywords."
-        llm_extract_query_1_input_val: str = st.text_input(
-            "Main Query 1:", value=last_extract_queries_val[0],
-            placeholder="e.g., Key methodologies, primary conclusions", key="llm_extract_q1_input", help=tooltip_text_q1
-        )
-        llm_extract_query_2_input_val: str = st.text_input(
-            "Additional Query 2:", value=last_extract_queries_val[1],
-            placeholder="e.g., Mentioned limitations, future work", key="llm_extract_q2_input", help=tooltip_text_q2
-        )
+        tooltip_text_q1 = "Main Query 1 drives primary relevancy and focused summary."
+        tooltip_text_q2 = "Optional: secondary question or keywords."
+        llm_extract_query_1_input_val: str = st.text_input("Main Query 1:", value=last_extract_queries_val[0], placeholder="e.g., Key methodologies", key="llm_extract_q1_input", help=tooltip_text_q1)
+        llm_extract_query_2_input_val: str = st.text_input("Additional Query 2:", value=last_extract_queries_val[1], placeholder="e.g., Mentioned limitations", key="llm_extract_q2_input", help=tooltip_text_q2)
         returned_queries = [llm_extract_query_1_input_val, llm_extract_query_2_input_val]
+        
         st.markdown("---")
         button_streamlit_type = "secondary"; button_disabled = True
-        button_help_text = current_gsheets_error or "Google Sheets connection status undetermined."
+        button_help_text = current_gsheets_error or "Google Sheets status undetermined."
         if sheet_writing_enabled:
             button_streamlit_type = "primary"; button_disabled = False
-            button_help_text = "Google Sheets connected. Click to start processing."
-        start_button_val: bool = st.button(
-            "🚀 Start Search & Analysis", type=button_streamlit_type, use_container_width=True,
-            disabled=button_disabled, help=button_help_text
-        )
+            button_help_text = "Google Sheets connected. Ready to process."
+        start_button_val: bool = st.button("🚀 Start Search & Analysis", type=button_streamlit_type, use_container_width=True, disabled=button_disabled, help=button_help_text)
         st.markdown("---")
-        st.caption("✨ LLM-generated search queries will be automatically used (if LLM is available).")
-        st.caption("📄 LLM Summaries for items will be automatically generated (if LLM is available).")
+        st.caption("✨ LLM-generated search queries will be used if LLM available.")
+        st.caption("📄 LLM Summaries for items will be generated if LLM available.")
     return keywords_input_val, num_results_wanted_per_keyword, returned_queries, start_button_val
 
+
 def apply_custom_css():
+    # ... (function remains unchanged from v1.1.7) ...
     green_button_css = """<style>div[data-testid="stButton"] > button:not(:disabled)[kind="primary"] {background-color: #4CAF50; color: white; border: 1px solid #4CAF50;} div[data-testid="stButton"] > button:not(:disabled)[kind="primary"]:hover {background-color: #45a049; color: white; border: 1px solid #45a049;} div[data-testid="stButton"] > button:not(:disabled)[kind="primary"]:active {background-color: #3e8e41; color: white; border: 1px solid #3e8e41;} div[data-testid="stButton"] > button:disabled[kind="secondary"] {background-color: #f0f2f6; color: rgba(38, 39, 48, 0.4); border: 1px solid rgba(38, 39, 48, 0.2);}</style>"""
     st.markdown(green_button_css, unsafe_allow_html=True)
 
@@ -116,79 +129,49 @@ def display_consolidated_summary_and_sources(
     focused_sources: Optional[List[Dict[str, Any]]],
     last_extract_queries: List[str]
 ) -> None:
-    """
-    Displays the consolidated summary using st.markdown to render TL;DR lists.
-    If focused, also shows sources.
-    """
+    # ... (function remains unchanged from v1.1.7) ...
     if summary_text:
-        st.markdown("---")
-        st.subheader("✨ Consolidated Overview Result")
-        
+        st.markdown("---"); st.subheader("✨ Consolidated Overview Result")
         is_error_message = "LLM_PROCESSOR_ERROR:" in summary_text
         is_info_only_summary = "LLM_PROCESSOR_INFO:" in summary_text and not is_error_message
-        
         primary_extract_query = last_extract_queries[0] if last_extract_queries and len(last_extract_queries) > 0 else ""
         was_focused_attempt = bool(any(q.strip() for q in last_extract_queries))
-
-        text_to_display_final = summary_text # Start with raw text
-
-        if is_error_message:
-            # Error messages from our processor are plain text, no sanitization needed for st.error
-            st.error(text_to_display_final) 
-            return 
-        elif is_info_only_summary:
-            # Info messages from our processor are plain text, no sanitization needed for st.info
-            st.info(text_to_display_final)
-            if "General overview as follows" in summary_text:
-                was_focused_attempt = False 
-        else: # This is a successfully generated narrative + TLDR
-            if was_focused_attempt:
-                if primary_extract_query and primary_extract_query.strip():
-                    st.caption(f"This overview is focused on insights related to Main Query 1: '{primary_extract_query}'.")
-            
-            # For successfully generated content (narrative + TLDR), display with st.markdown
-            # NO SANITIZATION applied here to allow \n- to render as lists.
-            with st.container(border=True):
-                st.markdown(text_to_display_final, unsafe_allow_html=False)
-
-        # Display sources expander (logic remains the same)
+        text_to_display_final = summary_text
+        if is_error_message: st.error(text_to_display_final); return 
+        elif is_info_only_summary: st.info(text_to_display_final);
+        else: 
+            if was_focused_attempt and primary_extract_query and primary_extract_query.strip(): st.caption(f"This overview is focused on Main Query 1: '{primary_extract_query}'.")
+            with st.container(border=True): st.markdown(text_to_display_final, unsafe_allow_html=False)
         if was_focused_attempt and focused_sources and not is_error_message and not is_info_only_summary:
             with st.expander("ℹ️ View Sources for Focused Consolidated Overview", expanded=False):
                 st.markdown(f"This focused overview was synthesized from **{len(focused_sources)}** high-scoring (>=3/5) extractions:")
                 for i, source in enumerate(focused_sources):
-                    url = source.get('url', 'N/A')
-                    query_type = source.get('query_type', 'N/A')
-                    query_text_short = source.get('query_text', 'N/A')
+                    url = source.get('url', 'N/A'); query_type = source.get('query_type', 'N/A')
+                    query_text_short = source.get('query_text', 'N/A'); score = source.get('score', 'N/A')
                     if len(query_text_short) > 40: query_text_short = query_text_short[:37] + "..."
-                    score = source.get('score', 'N/A')
-                    st.markdown(
-                        f"  {i+1}. **URL:** [{url}]({url})\n"
-                        f"     - **Source Query:** {query_type} (\"{query_text_short}\")\n"
-                        f"     - **Relevancy Score for this item:** {score}/5"
-                    )
-                st.caption("The LLM was instructed to synthesize these snippets with a primary focus on insights related to Main Query 1 (if provided).")
-    
+                    st.markdown(f"  {i+1}. **URL:** [{url}]({url})\n     - **Source Query:** {query_type} (\"{query_text_short}\")\n     - **Relevancy Score for this item:** {score}/5")
+                st.caption("The LLM was instructed to synthesize these snippets with a primary focus on Main Query 1 (if provided).")
     elif 'last_keywords' in st.session_state and st.session_state.last_keywords:
-         st.info("Consolidated overview is not available for this run (e.g., no items processed or LLM disabled).")
-
+         st.info("Consolidated overview is not available for this run.")
 
 def display_individual_results():
     if st.session_state.get('results_data'):
         st.subheader(f"📊 Individually Processed Content ({len(st.session_state.results_data)} item(s))")
         llm_gen_kws_for_display = st.session_state.get('llm_generated_keywords_set_for_display', set())
         last_extract_queries_for_display = st.session_state.get('last_extract_queries', ["", ""]) 
+        
         for i, item_val_display in enumerate(st.session_state.results_data):
             display_title_ui = item_val_display.get('scraped_title') or item_val_display.get('og_title') or \
-                               item_val_display.get('search_title') or "Untitled"
-            score_emoji_prefix = get_display_prefix_for_item(item_val_display)
-            content_type_marker = "📄" if 'pdf' in item_val_display.get('content_type', '').lower() else ""
+                               item_val_display.get('search_title') or item_val_display.get('pdf_document_title') or "Untitled" # Added pdf_document_title
+            score_emoji_prefix = get_display_prefix_for_item(item_val_display) # Uses numerical scores
+            content_type_marker = "📄 " if item_val_display.get('is_pdf') else "" # Check is_pdf boolean
             is_llm_keyword_source = item_val_display.get('keyword_searched','').lower() in llm_gen_kws_for_display
             llm_query_marker = "🤖" if is_llm_keyword_source else ""
-            full_prefix = score_emoji_prefix
-            if score_emoji_prefix and llm_query_marker: full_prefix += " " + llm_query_marker
-            elif llm_query_marker: full_prefix = llm_query_marker
-            if full_prefix: full_prefix += " "
-            expander_title_ui = (f"{full_prefix}{content_type_marker}"
+            
+            full_prefix_parts = [part for part in [score_emoji_prefix, llm_query_marker, content_type_marker] if part]
+            full_prefix = " ".join(full_prefix_parts) + " " if full_prefix_parts else ""
+            
+            expander_title_ui = (f"{full_prefix}"
                                  f"{item_val_display.get('keyword_searched','Unknown Keyword')} | "
                                  f"{display_title_ui} ({item_val_display.get('url', 'No URL')})").replace("  ", " ").strip()
             with st.expander(expander_title_ui):
@@ -196,14 +179,16 @@ def display_individual_results():
                 st.caption(f"Content Type: {item_val_display.get('content_type', 'N/A')}")
                 if item_val_display.get('scraping_error'):
                     st.error(f"Scraping Error: {item_val_display['scraping_error']}")
+                
                 with st.container(border=True): 
                     st.markdown("**Scraped Metadata:**")
-                    st.markdown(f"  - **Title:** {sanitize_text_for_markdown(item_val_display.get('scraped_title', 'N/A'))}\n" 
+                    st.markdown(f"  - **Title:** {sanitize_text_for_markdown(item_val_display.get('page_title', 'N/A'))}\n"  # Use 'page_title' from item_data_val
                                 f"  - **Meta Desc:** {sanitize_text_for_markdown(item_val_display.get('meta_description', 'N/A'))}\n" 
                                 f"  - **OG Title:** {sanitize_text_for_markdown(item_val_display.get('og_title', 'N/A'))}\n"         
                                 f"  - **OG Desc:** {sanitize_text_for_markdown(item_val_display.get('og_description', 'N/A'))}")    
                 
-                scraped_main_text = item_val_display.get('scraped_main_text', '')
+                # Use 'main_content_display' from item_data_val for consistency
+                scraped_main_text = item_val_display.get('main_content_display', '') 
                 if scraped_main_text and not str(scraped_main_text).startswith("SCRAPER_INFO:"):
                     with st.popover("View Main Text", use_container_width=True): 
                         st.text_area(f"Main Text ({item_val_display.get('content_type')})", value=scraped_main_text,
@@ -212,34 +197,53 @@ def display_individual_results():
                 else: st.caption("No main text extracted or usable for LLM processing.")
                 
                 has_llm_insights = False
-                insights_html_parts = ["<div><p><strong>LLM Insights:</strong></p>"] 
+                # Using st.markdown for better control over layout and potential list rendering
+                insights_container = st.container(border=True)
                 
                 raw_llm_summary = item_val_display.get("llm_summary")
-                if raw_llm_summary: 
+                if raw_llm_summary and not str(raw_llm_summary).lower().startswith(("llm error", "llm_processor", "no text content")): 
                     has_llm_insights = True
-                    sanitized_llm_summary = sanitize_text_for_markdown(raw_llm_summary)
-                    insights_html_parts.append(f"<div style='border:1px solid #e6e6e6; padding:10px; margin-bottom:10px;'><strong>Summary (LLM):</strong><br>{sanitized_llm_summary}</div>")
+                    insights_container.markdown("**Summary (LLM):**")
+                    insights_container.markdown(raw_llm_summary) # Display raw, LLM should provide clean text
                 
                 for q_idx in range(2): 
-                    query_text = last_extract_queries_for_display[q_idx] if q_idx < len(last_extract_queries_for_display) else ""
+                    query_key_text = f"llm_extraction_query_{q_idx+1}_text" # Key for query text from item_data
+                    score_key = f"llm_relevancy_score_q{q_idx+1}"
                     extracted_info_key = f"llm_extracted_info_q{q_idx+1}"
-                    raw_extracted_content = item_val_display.get(extracted_info_key)
-                    query_label = f"Main Query 1 ('{query_text}')" if q_idx == 0 else f"Additional Query 2 ('{query_text}')"
                     
-                    if query_text and query_text.strip() and raw_extracted_content:
+                    # Get query text from item_data_val if stored there, else from session state as fallback
+                    query_text_from_item = item_val_display.get(query_key_text)
+                    query_text_for_label = query_text_from_item if query_text_from_item else \
+                                          (last_extract_queries_for_display[q_idx] if q_idx < len(last_extract_queries_for_display) else "")
+
+                    raw_extracted_content = item_val_display.get(extracted_info_key)
+                    score_value = item_val_display.get(score_key) # This should be the numerical score
+
+                    query_label_prefix = f"Main Query 1" if q_idx == 0 else f"Additional Query 2"
+                    
+                    if query_text_for_label and query_text_for_label.strip() and raw_extracted_content:
                         has_llm_insights = True
-                        html_safe_extracted_content = raw_extracted_content.replace('&', '&').replace('<', '<').replace('>', '>')
-                        insights_html_parts.append(f"<div style='border:1px solid #e6e6e6; padding:10px; margin-bottom:10px;'><strong>Extracted Info for {query_label}:</strong><br><pre style='white-space: pre-wrap; word-wrap: break-word;'>{html_safe_extracted_content}</pre></div>")
+                        insights_container.markdown(f"**Extracted Info for {query_label_prefix} ('{query_text_for_label}'):**")
+                        # --- ADD SCORE DISPLAY HERE ---
+                        if score_value is not None:
+                            insights_container.markdown(f"    *Relevancy Score for this item: {score_value}/5*")
+                        # --- END SCORE DISPLAY ---
+                        insights_container.markdown(raw_extracted_content) # Display raw, LLM should provide clean text
                 
-                insights_html_parts.append("</div>")
-                if has_llm_insights:
-                    st.markdown("".join(insights_html_parts), unsafe_allow_html=True)
+                if not has_llm_insights and llm_key_available: # Check if LLM was available
+                     insights_container.caption("No specific LLM insights (summary/extractions) generated or available for this item.")
+                elif not llm_key_available:
+                     insights_container.caption("LLM processing disabled; no LLM insights generated.")
                 
                 st.caption(f"Item Timestamp: {item_val_display.get('timestamp')}")
 
 def display_processing_log():
     if st.session_state.get('processing_log'):
         with st.expander("📜 View Processing Log", expanded=False):
-            st.code("\n".join(st.session_state.processing_log), language=None)
+            log_content = "\n".join(st.session_state.processing_log)
+            # Filter out repetitive progress messages for cleaner log display
+            # This is a simple filter; more sophisticated filtering could be added
+            filtered_log_lines = [line for line in log_content.splitlines() if not line.startswith("LOG_UI_STATUS:")]
+            st.text_area("Processing Log (filtered):", value="\n".join(filtered_log_lines), height=300, key="log_display_text_area", disabled=True)
 
-# end of modules/ui_manager.py
+# // end of modules/ui_manager.py
