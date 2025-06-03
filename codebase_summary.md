@@ -13,10 +13,31 @@ Module Docstring:
 ```text
 Handles the creation and formatting of Excel files for exporting application results.
 
-This module provides functions to convert processed item data and consolidated
-summaries into structured Pandas DataFrames and then into a downloadable
-Excel file format (.xlsx) with separate sheets for detailed item results and
-the overall summary.
+This module provides functions to:
+1. Prepare Pandas DataFrames from processed item data and consolidated summaries.
+2. Clean string data within these DataFrames to remove illegal XML characters
+   that would prevent successful export to .xlsx format.
+3. Convert the cleaned DataFrames into a downloadable Excel file (.xlsx)
+   with separate sheets for detailed item results and the overall summary.
+```
+
+### def _clean_string_for_excel(text: Any) -> Any
+Docstring:
+```text
+Removes or replaces illegal XML characters from a string.
+
+These characters can cause errors when writing to .xlsx files with openpyxl.
+The function specifically targets control characters in the ASCII range
+0-31, excluding tab, newline, and carriage return, which are generally
+permissible.
+
+Args:
+    text: The input value. If it's a string, it will be cleaned by
+          removing illegal characters. Otherwise, it will be returned as is.
+
+Returns:
+    The cleaned string with illegal characters removed, or the original
+    value if it was not a string.
 ```
 
 ### def prepare_item_details_df(results_data: List[Dict[str, Any]], last_extract_queries: List[str]) -> pd.DataFrame
@@ -26,46 +47,53 @@ Prepares a Pandas DataFrame for the 'Item_Details' sheet in the Excel export.
 
 This function transforms a list of dictionaries, where each dictionary represents
 a processed item (e.g., a scraped URL with its metadata, LLM summary, and
-extracted information), into a Pandas DataFrame. It includes columns for
-both LLM extraction queries and their corresponding extracted information.
+extracted information), into a Pandas DataFrame. It defines a standard set
+of columns and their order, populates extraction query text, and renames
+columns for better readability in the exported Excel file.
+
+The content of 'main_content_display' is assumed to be handled (e.g., truncated)
+before being passed into this function if necessary, or it will export the full content.
 
 Args:
-    results_data: List[Dict[str, Any]]: A list of dictionaries, where each
-        dictionary contains the data for a single processed item. Expected keys
-        include 'timestamp', 'keyword_searched', 'url', 'llm_summary',
-        'llm_extracted_info_q1', 'llm_extracted_info_q2', etc.
-    last_extract_queries: List[str]: A list containing the text of the
-        extraction queries used. The first element is Q1, the second is Q2.
-        Used to populate the 'LLM Extraction Query' columns.
+    results_data: A list of dictionaries, where each dictionary contains
+        the data for a single processed item. Expected keys include
+        'timestamp', 'keyword_searched', 'url', 'page_title', 
+        'llm_summary', 'llm_extracted_info_q1', 'llm_relevancy_score_q1',
+        'llm_extracted_info_q2', 'llm_relevancy_score_q2', 'main_content_display', etc.
+    last_extract_queries: A list containing the text of the extraction
+        queries used. The first element is assumed to be Q1, the second is Q2.
+        These are used to populate the 'LLM Extraction Query' columns.
 
 Returns:
-    pd.DataFrame: A DataFrame where each row corresponds to an item and columns
-        represent various details of the item, ready for Excel export.
+    A Pandas DataFrame where each row corresponds to a processed item and
+    columns represent various details of that item, ready for Excel export.
 ```
 
-### def prepare_consolidated_summary_df(consolidated_summary_text: Optional[str], results_data_count: int, last_keywords: str, primary_last_extract_query: Optional[str], batch_timestamp: str) -> Optional[pd.DataFrame]
+### def prepare_consolidated_summary_df(consolidated_summary_text: Optional[str], results_data_count: int, last_keywords: str, primary_llm_extract_query: Optional[str], secondary_llm_extract_query: Optional[str], batch_timestamp: str, focused_summary_source_count: Optional[int] = None) -> Optional[pd.DataFrame]
 Docstring:
 ```text
 Prepares a Pandas DataFrame for the 'Consolidated_Summary' sheet.
 
 This function creates a DataFrame containing the consolidated LLM summary,
-details about the batch (timestamp, keywords), the number of source items,
-and a note indicating if the summary was focused on a specific query.
+details about the batch (timestamp, keywords, extraction queries), the number
+of source items, and a note indicating whether the summary was general or
+focused (and on which queries).
 
 Args:
-    consolidated_summary_text: Optional[str]: The text of the consolidated
-        summary. If None, or starts with "error:", no DataFrame is created.
-    results_data_count: int: The number of individual items that were
-        considered for the consolidated summary.
-    last_keywords: str: A comma-separated string of keywords used for the batch.
-    primary_last_extract_query: Optional[str]: The text of the primary
-        extraction query (Q1), if provided. Used to note if the summary
-        was focused.
-    batch_timestamp: str: The timestamp for the batch processing run.
+    consolidated_summary_text: The text of the consolidated summary.
+        If None, or starts with "error:", no DataFrame is created.
+    results_data_count: The total number of individual items processed in the batch.
+    last_keywords: A comma-separated string of keywords used for the batch.
+    primary_llm_extract_query: The text of the primary extraction query (Q1), if provided.
+    secondary_llm_extract_query: The text of the secondary extraction query (Q2), if provided.
+    batch_timestamp: The timestamp for the batch processing run.
+    focused_summary_source_count: If the summary was focused, this is the count
+        of items that met the criteria and were used as input. If None or 0,
+        the summary is considered general or a fallback.
 
 Returns:
-    Optional[pd.DataFrame]: A DataFrame with the consolidated summary details,
-        or None if the consolidated_summary_text is empty, None, or an error message.
+    A Pandas DataFrame with the consolidated summary details, or None if the
+    consolidated_summary_text is empty, None, or an error message.
 ```
 
 ### def to_excel_bytes(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes
@@ -73,20 +101,19 @@ Docstring:
 ```text
 Converts DataFrames for item details and an optional consolidated summary into Excel bytes.
 
-This function takes one mandatory DataFrame (item details) and an optional
-DataFrame (consolidated summary). It writes them to separate sheets
-('Item_Details' and 'Consolidated_Summary') in an Excel file and returns
-the file content as a byte string, suitable for downloading.
+This function cleans string data in the DataFrames to remove illegal XML characters
+before writing them to separate sheets ('Item_Details' and 'Consolidated_Summary')
+in an Excel file. It returns the file content as a byte string, suitable for downloading.
 
 Args:
-    df_item_details: pd.DataFrame: The DataFrame containing detailed information
+    df_item_details: A Pandas DataFrame containing detailed information
         for each processed item.
-    df_consolidated_summary: Optional[pd.DataFrame]: An optional DataFrame
-        containing the consolidated summary. If None or empty, this sheet
-        will not be added to the Excel file.
+    df_consolidated_summary: An optional Pandas DataFrame containing the
+        consolidated summary. If None or empty, this sheet will not be
+        added to the Excel file.
 
 Returns:
-    bytes: A byte string representing the content of the generated .xlsx Excel file.
+    A byte string representing the content of the generated .xlsx Excel file.
 ```
 
 ---
