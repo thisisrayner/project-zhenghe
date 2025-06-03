@@ -126,15 +126,59 @@ Handles data storage operations, primarily focused on Google Sheets integration.
 
 ### def get_gspread_worksheet(service_account_info: Optional[Dict[str, Any]], spreadsheet_id: Optional[str], spreadsheet_name: Optional[str], worksheet_name: str = 'Sheet1') -> Optional[gspread.Worksheet]
 Docstring:
-[No docstring provided]
+```text
+Connects to Google Sheets using service account credentials and returns a specific worksheet.
+
+It tries to open the spreadsheet first by ID (if provided), then by name as a fallback.
+It then attempts to get the specified worksheet by its name, with a fallback to the
+first sheet if `worksheet_name` is 'Sheet1' and it's not found.
+
+Args:
+    service_account_info: Dictionary containing Google Service Account credentials.
+    spreadsheet_id: The ID of the Google Sheet (from its URL).
+    spreadsheet_name: The name of the Google Spreadsheet file.
+    worksheet_name: The name of the tab/worksheet within the spreadsheet.
+
+Returns:
+    A `gspread.Worksheet` object if successful, otherwise `None`.
+    Errors are logged to `st.error` or `st.warning`.
+```
 
 ### def ensure_master_header(worksheet: gspread.Worksheet) -> None
 Docstring:
-[No docstring provided]
+```text
+Ensures that the first row of the given worksheet matches the MASTER_HEADER.
+If it doesn't match, or if the row is empty/blank, it overwrites Row 1
+with the MASTER_HEADER. This is an assertive function.
+
+Args:
+    worksheet: The `gspread.Worksheet` object to check and update.
+```
 
 ### def write_batch_summary_and_items_to_sheet(worksheet: gspread.Worksheet, batch_timestamp: str, consolidated_summary: Optional[str], topic_context: str, item_data_list: List[Dict[str, Any]], extraction_queries_list: List[str], main_text_truncate_limit: int = 10000) -> bool
 Docstring:
-[No docstring provided]
+```text
+Writes a batch summary row and multiple item detail rows to the specified Google Sheet.
+
+The data is structured according to the MASTER_HEADER.
+It first prepares a batch summary row, then a row for each item in `item_data_list`.
+All rows are then appended to the sheet in a single API call if possible.
+
+Args:
+    worksheet: The `gspread.Worksheet` object to write to.
+    batch_timestamp: Timestamp string for the overall batch.
+    consolidated_summary: The consolidated LLM summary text for the batch.
+    topic_context: Keywords or topic context for the batch.
+    item_data_list: A list of dictionaries, each representing a processed item's data.
+                    Expected keys align with MASTER_HEADER columns for "Item Detail".
+    extraction_queries_list: A list of the extraction query strings used [Q1_text, Q2_text].
+    main_text_truncate_limit: Character limit for truncating main text content.
+
+Returns:
+    `True` if data was successfully written (or if only a batch summary was written
+    when no items were present), `False` otherwise.
+    Errors are logged via `st.error`.
+```
 
 ---
 
