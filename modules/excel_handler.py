@@ -255,4 +255,4 @@ def to_excel_bytes(df_item_details: pd.DataFrame, df_consolidated_summary: Optio
         
     return output.getvalue()
 
-# end of modules/excel_handler.py
+# // end of modules/excel_handler.py
