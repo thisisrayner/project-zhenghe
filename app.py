@@ -1,12 +1,11 @@
 # app.py
+# Version 3.1.6:
+# - Fixed ValueError in sidebar debug log display caused by list comprehension
+#   being implicitly passed to st.write after a semicolon.
 # Version 3.1.5:
 # - Interprets LOG_STATUS messages from process_manager's log to display
 #   final st.success/st.warning/st.error messages.
 # - Handles NO_KEYWORDS error logged by process_manager.
-# Version 3.1.4:
-# - Added extensive print() debugging for log variable handling and general flow.
-# Version 3.1.3:
-# - Corrected arguments passed to excel_handler.prepare_consolidated_summary_df
 
 """
 Streamlit Web Application for D.O.R.A - The Research Agent.
@@ -41,7 +40,7 @@ default_session_state: Dict[str, Any] = {
     'focused_summary_sources': [], 'gs_worksheet': None, 'sheet_writing_enabled': False,
     'sheet_connection_attempted_this_session': False, 'gsheets_error_message': None,
     'initial_keywords_for_display': set(), 'llm_generated_keywords_set_for_display': set(),
-    'batch_timestamp_for_excel': None, 'run_complete_status_message': None # For final status
+    'batch_timestamp_for_excel': None, 'run_complete_status_message': None 
 }
 for key, default_value in default_session_state.items():
     if key not in st.session_state:
@@ -96,12 +95,9 @@ keywords_input, num_results, llm_extract_queries_list, start_button = ui_manager
 print(f"DEBUG (app.py): Sidebar rendered. Start button state: {start_button}, Keywords: '{keywords_input}', Num_results: {num_results}, Q1: '{llm_extract_queries_list[0] if llm_extract_queries_list else ''}', Q2: '{llm_extract_queries_list[1] if len(llm_extract_queries_list) > 1 else ''}'") 
 
 ui_manager.apply_custom_css()
-
-# Placeholders for dynamic content
-status_message_placeholder = st.empty() # For final status messages
+status_message_placeholder = st.empty() 
 results_container = st.container()
 log_container = st.container()
-
 
 # --- Main Processing Logic ---
 if start_button:
@@ -113,7 +109,7 @@ if start_button:
     st.session_state.initial_keywords_for_display = set()
     st.session_state.llm_generated_keywords_set_for_display = set()
     st.session_state.batch_timestamp_for_excel = time.strftime('%Y-%m-%d %H:%M:%S')
-    st.session_state.run_complete_status_message = None # Clear previous status
+    st.session_state.run_complete_status_message = None 
     print(f"DEBUG (app.py): Session state for run initialized. Batch timestamp: {st.session_state.batch_timestamp_for_excel}") 
 
     st.session_state.last_keywords = keywords_input
@@ -123,7 +119,7 @@ if start_button:
     print(f"DEBUG (app.py): Calling process_manager.run_search_and_analysis. Active Queries: {active_llm_extract_queries}, Num Results per Keyword: {num_results}") 
     print(f"DEBUG (app.py): Sheet writing enabled for PM: {st.session_state.sheet_writing_enabled}, Worksheet for PM: {type(st.session_state.gs_worksheet)}") 
 
-    with st.spinner("D.O.R.A. is thinking... please wait for all processing to complete."): # General spinner
+    with st.spinner("D.O.R.A. is thinking... please wait for all processing to complete."): 
         try:
             log, data, summary, initial_kws_display, llm_kws_display, focused_sources = process_manager.run_search_and_analysis(
                 app_config=cfg, keywords_input=keywords_input,
@@ -153,20 +149,15 @@ if start_button:
             print("DEBUG (app.py): Session state updated with results from process_manager.") 
             print(f"DEBUG (app.py): st.session_state.processing_log length now: {len(st.session_state.processing_log) if isinstance(st.session_state.processing_log, list) else 'Not a list'}") 
 
-            # --- Interpret LOG_STATUS from processing_log for final UI message ---
-            final_status_log_entry = next((item for item in reversed(log) if item.startswith("LOG_STATUS:")), None)
+            final_status_log_entry = next((item for item in reversed(log) if isinstance(item, str) and item.startswith("LOG_STATUS:")), None) # Ensure item is str
             if final_status_log_entry:
                 print(f"DEBUG (app.py): Found final_status_log_entry: {final_status_log_entry}")
                 st.session_state.run_complete_status_message = final_status_log_entry
             else:
-                # Fallback if no explicit LOG_STATUS found (should not happen with new process_manager)
                 st.session_state.run_complete_status_message = "LOG_STATUS:WARNING:Processing finished, but final status unclear from logs."
                 print(f"DEBUG (app.py): No LOG_STATUS found in log. Defaulting to: {st.session_state.run_complete_status_message}")
 
-
         except Exception as e_process_mgr:
-            # This catch block is for unexpected errors during the call to process_manager itself
-            # or errors within process_manager that were not caught by its own try-except.
             status_message_placeholder.error(f"A critical error occurred during processing: {e_process_mgr}")
             print(f"CRITICAL ERROR (app.py): Exception in process_manager.run_search_and_analysis call: {e_process_mgr}") 
             print(traceback.format_exc()) 
@@ -175,31 +166,23 @@ if start_button:
             err_msg_for_log = f"APP_PY_ERROR: Main process failed: {e_process_mgr}\n{traceback.format_exc()}"
             current_log_val.append(err_msg_for_log)
             st.session_state.processing_log = current_log_val
-            st.session_state.run_complete_status_message = f"LOG_STATUS:APP_PY_CRITICAL_ERROR:{err_msg_for_log}" # Store error for display
+            st.session_state.run_complete_status_message = f"LOG_STATUS:APP_PY_CRITICAL_ERROR:{err_msg_for_log}" 
             print(f"DEBUG (app.py): Error from process_manager appended to session_state.processing_log and run_complete_status_message") 
 
-# --- Display Final Status Message AFTER processing is done (if start_button was true) ---
 if st.session_state.get('run_complete_status_message'):
     status_parts = st.session_state.run_complete_status_message.split(':', 2)
-    status_type = "INFO" # Default
+    status_type = "INFO" 
     status_text = st.session_state.run_complete_status_message
-    if len(status_parts) > 1:
-        status_type = status_parts[1]
-    if len(status_parts) > 2:
-        status_text = status_parts[2]
+    if len(status_parts) > 1: status_type = status_parts[1]
+    if len(status_parts) > 2: status_text = status_parts[2]
     
     print(f"DEBUG (app.py): Displaying final status. Type: {status_type}, Text: {status_text[:100]}")
-    if status_type == "SUCCESS":
-        status_message_placeholder.success(status_text)
-    elif status_type == "WARNING":
-        status_message_placeholder.warning(status_text)
-    elif status_type == "ERROR" or "CRITICAL_ERROR" in status_type:
-        status_message_placeholder.error(status_text)
-    else: # Default for INFO or other prefixes
-        status_message_placeholder.info(status_text)
-    st.session_state.run_complete_status_message = None # Clear after displaying
+    if status_type == "SUCCESS": status_message_placeholder.success(status_text)
+    elif status_type == "WARNING": status_message_placeholder.warning(status_text)
+    elif status_type == "ERROR" or "CRITICAL_ERROR" in status_type: status_message_placeholder.error(status_text)
+    else: status_message_placeholder.info(status_text)
+    st.session_state.run_complete_status_message = None 
 
-# --- Display Results and Logs (always attempt to display from session_state) ---
 print("DEBUG (app.py): Entering Display Results and Logs section.") 
 print(f"DEBUG (app.py): results_data available: {bool(st.session_state.get('results_data'))}, summary_text available: {bool(st.session_state.get('consolidated_summary_text'))}") 
 
@@ -209,12 +192,10 @@ with results_container:
         print("DEBUG (app.py): Preparing Excel data for download button.") 
         try:
             df_item_details = excel_handler.prepare_item_details_df(
-                st.session_state.get("results_data", []),
-                st.session_state.last_extract_queries 
+                st.session_state.get("results_data", []), st.session_state.last_extract_queries 
             )
             df_consolidated_summary_excel = None
             if st.session_state.consolidated_summary_text:
-                # ... (Excel df_consolidated_summary_excel preparation logic from v3.1.4, unchanged) ...
                 q1_text_for_excel = st.session_state.last_extract_queries[0] if st.session_state.last_extract_queries and st.session_state.last_extract_queries[0] else None
                 q2_text_for_excel = st.session_state.last_extract_queries[1] if st.session_state.last_extract_queries and len(st.session_state.last_extract_queries) > 1 and st.session_state.last_extract_queries[1] else None
                 focused_count_for_excel = None
@@ -254,17 +235,24 @@ with results_container:
 
 # ---- DEBUG for UI Log Display in Sidebar ----
 st.sidebar.subheader("Log Debug (app.py - UI section)")
-# ... (Sidebar log debug from v3.1.4, unchanged) ...
 current_log_ui_check = st.session_state.get("processing_log")
-if current_log_ui_check is None: st.sidebar.write("UI: st.session_state.processing_log is None")
+if current_log_ui_check is None: 
+    st.sidebar.write("UI: st.session_state.processing_log is None")
 else:
     st.sidebar.write(f"UI: Log type in session_state: {type(current_log_ui_check)}")
     if isinstance(current_log_ui_check, list):
         st.sidebar.write(f"UI: Log length: {len(current_log_ui_check)}")
         if current_log_ui_check:
-            st.sidebar.write("UI: First 5 log entries (from app.py sidebar):"); [st.sidebar.caption(str(entry)[:200]) for entry in current_log_ui_check[:5]]
-            st.sidebar.write("UI: Last 5 log entries (from app.py sidebar):"); [st.sidebar.caption(str(entry)[:200]) for entry in current_log_ui_check[-5:]]
-    else: st.sidebar.write(f"UI: Log content (if not list): {str(current_log_ui_check)[:500]}")
+            st.sidebar.write("UI: First 5 log entries (from app.py sidebar):")
+            # MODIFIED LINE: Removed list comprehension from st.write/st.sidebar.caption
+            for entry in current_log_ui_check[:5]:
+                st.sidebar.caption(str(entry)[:200])
+            st.sidebar.write("UI: Last 5 log entries (from app.py sidebar):")
+            # MODIFIED LINE: Removed list comprehension from st.write/st.sidebar.caption
+            for entry in current_log_ui_check[-5:]:
+                st.sidebar.caption(str(entry)[:200])
+    else: 
+        st.sidebar.write(f"UI: Log content (if not list): {str(current_log_ui_check)[:500]}")
 # ---- END DEBUG ----
 
 with log_container:
