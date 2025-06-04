@@ -1,9 +1,8 @@
 # app.py
-# Version 3.1.13:
-# - Removed blockquote for helper text to eliminate the left pipe.
-# - Removed the extra horizontal line after the helper text.
+# Version 3.1.14:
+# - Adjusted vertical spacing around the new helper text for better visual balance.
 # Previous versions:
-# - Version 3.1.12: Added an instructional helper text on the main page.
+# - Version 3.1.13: Removed blockquote for helper text & consolidated horizontal lines.
 
 """
 Streamlit Web Application for D.O.R.A - The Research Agent.
@@ -16,11 +15,12 @@ from typing import Dict, Any, Optional, List
 import traceback 
 
 # --- Page Configuration ---
+# ... (as in v3.1.13) ...
 st.set_page_config(page_title="D.O.R.A - The Research Agent", page_icon="🔮", layout="wide")
 print(f"DEBUG (app.py V{config.APP_VERSION}): app.py execution started/re-run.") 
 
 # --- Config Loading & Session State ---
-# ... (as in v3.1.12 - ensure cfg and llm_globally_enabled are set in session_state) ...
+# ... (as in v3.1.13 - ensure cfg and llm_globally_enabled are set in session_state) ...
 if 'app_config' not in st.session_state or st.session_state.app_config is None:
     st.session_state.app_config = config.load_config() 
     if st.session_state.app_config is None: st.error("CRITICAL FAILURE: config.load_config() returned None."); st.stop()
@@ -43,9 +43,8 @@ default_session_state_keys: Dict[str, Any] = {
 for key, default_value in default_session_state_keys.items():
     if key not in st.session_state: st.session_state[key] = default_value
 
-
 # --- Google Sheets Setup ---
-# ... (as in v3.1.12) ...
+# ... (as in v3.1.13) ...
 gsheets_secrets_present = bool(cfg.gsheets.service_account_info and (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name))
 if not st.session_state.sheet_connection_attempted_this_session:
     st.session_state.sheet_connection_attempted_this_session = True
@@ -58,19 +57,17 @@ if not st.session_state.sheet_connection_attempted_this_session:
         except Exception as e_gs_setup: st.session_state.gsheets_error_message = f"Error GSheets setup: {e_gs_setup}"
     else: st.session_state.gsheets_error_message = "GSheets not configured."
 
-
 # --- UI Rendering ---
 st.title("D.O.R.A 🔮")
 st.markdown("The **Domain**-wide **Overview** For **Research** **Agent**") # Your existing subtitle
 
-# --- MODIFIED HELPER TEXT SECTION ---
+# --- MODIFIED HELPER TEXT SECTION with SPACING ---
 if not st.session_state.get("results_data") and \
    not st.session_state.get("consolidated_summary_text") and \
    not st.session_state.get('run_complete_status_message'):
-    # Using st.write for plain paragraph text, or st.caption for smaller, muted text
+    st.write("") # Adds a blank line for spacing
     st.write("Welcome to D.O.R.A.! To begin your research, please enter keywords and any specific queries in the sidebar on the left.")
-    # Removed the st.markdown("---") from here
-# The next st.markdown("---") will appear conditionally before results/download button
+# The st.markdown("---") that appears before results is handled later, conditionally.
 # --- END MODIFIED HELPER TEXT SECTION ---
 
 print(f"DEBUG (app.py V{config.APP_VERSION}): Main UI title and helper text rendered.") 
@@ -86,7 +83,7 @@ results_container = st.container()
 log_container = st.container()
 
 # --- Main Processing Logic ---
-# ... (as in v3.1.12 - no changes needed here for this specific UI tweak) ...
+# ... (as in v3.1.13 - no changes needed here for this specific UI tweak) ...
 if start_button:
     st.session_state.processing_log = [f"Processing initiated at {time.strftime('%Y-%m-%d %H:%M:%S')}... (app.py V{config.APP_VERSION})"] 
     st.session_state.results_data = [] # etc.
@@ -131,8 +128,8 @@ if st.session_state.get('run_complete_status_message'):
 # --- Results and Logs Display ---
 with results_container:
     if st.session_state.get("results_data") or st.session_state.get("consolidated_summary_text"):
-        st.markdown("---") # This is the horizontal line that should remain
-        # ... (Excel download button logic - unchanged from v3.1.12) ...
+        st.markdown("---") # This is the horizontal line that appears before results
+        # ... (Excel download button logic - unchanged from v3.1.13) ...
         try:
             df_item_details = excel_handler.prepare_item_details_df(st.session_state.get("results_data", []), st.session_state.get('last_extract_queries', ["", ""]))
             df_consolidated_summary_excel = None
@@ -148,9 +145,8 @@ with results_container:
             excel_file_bytes = excel_handler.to_excel_bytes(df_item_details, df_consolidated_summary_excel)
             filename_timestamp = st.session_state.get("batch_timestamp_for_excel", time.strftime('%Y%m%d%H%M%S')).replace(":", "").replace("-", "").replace(" ", "_") 
             st.download_button(label="📥 Download Results as Excel", data=excel_file_bytes, file_name=f"dora_results_{filename_timestamp}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_button_main_v3113") # Unique key
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_button_main_v3114") # Unique key
         except Exception as e_excel: st.error(f"Error preparing Excel download: {e_excel}")
-
 
     ui_manager.display_consolidated_summary_and_sources(
         st.session_state.consolidated_summary_text,
@@ -162,7 +158,7 @@ with results_container:
 with log_container:
     ui_manager.display_processing_log() 
 
-st.markdown("---") # This is likely the bottom-most horizontal line you see
+st.markdown("---") # This is the horizontal line before the D.O.R.A version caption
 st.caption(f"D.O.R.A v{config.APP_VERSION}") 
 print(f"DEBUG (app.py V{config.APP_VERSION}): Reached end of app.py script execution. D.O.R.A v{config.APP_VERSION}") 
 
