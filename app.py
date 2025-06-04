@@ -1,11 +1,8 @@
 # app.py
-# Version 3.1.11:
-# - Integrated dynamic spinner messages by calling ui_manager.get_random_spinner_message().
+# Version 3.1.12:
+# - Added an instructional helper text on the main page for new users.
 # Previous versions:
-# - Version 3.1.10: Corrected attribute access to 'cfg.gsheets'.
-# - Version 3.1.9: Added more robust checks for AppConfig loading.
-# - Version 3.1.8: (Attempted to correct gsheets to sheets, which was incorrect).
-# - Version 3.1.7: Stores loaded app config in session_state, initializes llm_globally_enabled.
+# - Version 3.1.11: Integrated dynamic spinner messages by calling ui_manager.get_random_spinner_message().
 
 """
 Streamlit Web Application for D.O.R.A - The Research Agent.
@@ -44,7 +41,7 @@ if cfg is None:
     print(f"CRITICAL ERROR (app.py V{config.APP_VERSION}): cfg is None. Halting.")
     st.stop()
 
-if not hasattr(cfg, 'gsheets') or cfg.gsheets is None: # Check using 'gsheets'
+if not hasattr(cfg, 'gsheets') or cfg.gsheets is None: 
     st.error("CRITICAL ERROR: Configuration 'cfg' missing 'gsheets' attribute or 'cfg.gsheets' is None. Check config.py. Halting.")
     print(f"CRITICAL ERROR (app.py V{config.APP_VERSION}): cfg.gsheets missing/None. cfg type: {type(cfg)}. hasattr: {hasattr(cfg, 'gsheets')}. Halting.")
     st.stop()
@@ -108,15 +105,26 @@ else:
 
 # --- UI Rendering ---
 st.title("D.O.R.A 🔮")
-st.markdown("The **Domain**-wide **Overview** For **Research** **Agent**")
-print(f"DEBUG (app.py V{config.APP_VERSION}): Main UI title rendered.") 
+st.markdown("The **Domain**-wide **Overview** For **Research** **Agent**") # Your existing subtitle
+
+# --- START: NEW HELPER TEXT ---
+# Display this only if no results or summary are currently in session state,
+# and no processing is currently indicated by a run_complete_status_message
+if not st.session_state.get("results_data") and \
+   not st.session_state.get("consolidated_summary_text") and \
+   not st.session_state.get('run_complete_status_message'): # Avoid showing after a run that yielded no results
+    st.markdown("> Welcome to D.O.R.A.! To begin your research, please enter keywords and any specific queries in the sidebar on the left.")
+st.markdown("---") # Visual separator
+# --- END: NEW HELPER TEXT ---
+
+print(f"DEBUG (app.py V{config.APP_VERSION}): Main UI title and helper text rendered.") 
 
 keywords_input, num_results, llm_extract_queries_list, start_button = ui_manager.render_sidebar(
     cfg, 
     st.session_state.gsheets_error_message, 
     st.session_state.sheet_writing_enabled
 )
-ui_manager.apply_custom_css() # This was the line 119 from a previous error
+ui_manager.apply_custom_css() 
 status_message_placeholder = st.empty() 
 results_container = st.container()
 log_container = st.container()
@@ -124,7 +132,6 @@ log_container = st.container()
 # --- Main Processing Logic ---
 if start_button:
     print(f"DEBUG (app.py V{config.APP_VERSION}): 'Start Search & Analysis' button pressed.") 
-    # Reset relevant session state variables for a new run
     st.session_state.processing_log = [f"Processing initiated at {time.strftime('%Y-%m-%d %H:%M:%S')}... (app.py V{config.APP_VERSION})"] 
     st.session_state.results_data = []
     st.session_state.consolidated_summary_text = None
@@ -132,7 +139,7 @@ if start_button:
     st.session_state.initial_keywords_for_display = set()
     st.session_state.llm_generated_keywords_set_for_display = set()
     st.session_state.batch_timestamp_for_excel = time.strftime('%Y-%m-%d %H:%M:%S')
-    st.session_state.run_complete_status_message = None # Clear previous run's final status
+    st.session_state.run_complete_status_message = None 
     
     print(f"DEBUG (app.py V{config.APP_VERSION}): Session state for run initialized. Batch timestamp: {st.session_state.batch_timestamp_for_excel}") 
 
@@ -142,11 +149,10 @@ if start_button:
     active_llm_extract_queries = [q for q in llm_extract_queries_list if q.strip()]
     print(f"DEBUG (app.py V{config.APP_VERSION}): Calling process_manager.run_search_and_analysis. Active Queries: {active_llm_extract_queries}, Num Results: {num_results}") 
     
-    # Get random spinner message
     spinner_message = ui_manager.get_random_spinner_message()
     print(f"DEBUG (app.py V{config.APP_VERSION}): Using spinner message: '{spinner_message}'")
 
-    with st.spinner(spinner_message): # Use the dynamic message
+    with st.spinner(spinner_message): 
         try:
             log, data, summary, initial_kws_display, llm_kws_display, focused_sources = process_manager.run_search_and_analysis(
                 app_config=cfg, 
@@ -174,7 +180,7 @@ if start_button:
                 print(f"DEBUG (app.py V{config.APP_VERSION}): No LOG_STATUS found in log. Defaulting status.")
         except Exception as e_process_mgr:
             detailed_error = f"APP_PY_ERROR: Main process failed: {type(e_process_mgr).__name__} - {e_process_mgr}\n{traceback.format_exc()}"
-            status_message_placeholder.error(f"A critical error occurred in processing: {e_process_mgr}") # Show immediate error
+            status_message_placeholder.error(f"A critical error occurred in processing: {e_process_mgr}") 
             print(f"CRITICAL ERROR (app.py V{config.APP_VERSION}): Exception in process_manager call: {detailed_error}") 
             current_log_val = st.session_state.get('processing_log', [])
             if not isinstance(current_log_val, list): current_log_val = [str(current_log_val)] 
@@ -192,9 +198,9 @@ if st.session_state.get('run_complete_status_message'):
     print(f"DEBUG (app.py V{config.APP_VERSION}): Displaying final status. Type: {status_type}, Text: {status_text[:100]}")
     if status_type == "SUCCESS": status_message_placeholder.success(status_text)
     elif status_type == "WARNING": status_message_placeholder.warning(status_text)
-    elif "ERROR" in status_type: status_message_placeholder.error(status_text) # Catches ERROR & CRITICAL_ERROR
+    elif "ERROR" in status_type: status_message_placeholder.error(status_text) 
     else: status_message_placeholder.info(status_text)
-    st.session_state.run_complete_status_message = None # Clear after displaying
+    st.session_state.run_complete_status_message = None 
 
 print(f"DEBUG (app.py V{config.APP_VERSION}): Entering Display Results and Logs section.") 
 
@@ -204,7 +210,7 @@ with results_container:
         try:
             df_item_details = excel_handler.prepare_item_details_df(
                 st.session_state.get("results_data", []), 
-                st.session_state.get('last_extract_queries', ["", ""]) # Use get for safety
+                st.session_state.get('last_extract_queries', ["", ""]) 
             )
             df_consolidated_summary_excel = None
             if st.session_state.consolidated_summary_text:
@@ -218,7 +224,7 @@ with results_container:
                 df_consolidated_summary_excel = excel_handler.prepare_consolidated_summary_df(
                     consolidated_summary_text=st.session_state.consolidated_summary_text,
                     results_data_count=len(st.session_state.get("results_data", [])),
-                    last_keywords=st.session_state.get('last_keywords', ""), # Use get
+                    last_keywords=st.session_state.get('last_keywords', ""), 
                     primary_llm_extract_query=q1_text_for_excel,
                     secondary_llm_extract_query=q2_text_for_excel, 
                     batch_timestamp=st.session_state.get("batch_timestamp_for_excel", time.strftime('%Y-%m-%d %H:%M:%S')),
@@ -230,7 +236,7 @@ with results_container:
                 label="📥 Download Results as Excel", data=excel_file_bytes,
                 file_name=f"dora_results_{filename_timestamp}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True, key="download_excel_button" # Added key
+                use_container_width=True, key="download_excel_button" 
             )
         except Exception as e_excel:
             st.error(f"Error preparing Excel download: {e_excel}")
@@ -240,7 +246,7 @@ with results_container:
     ui_manager.display_consolidated_summary_and_sources(
         st.session_state.consolidated_summary_text,
         st.session_state.focused_summary_sources,
-        st.session_state.get('last_extract_queries', ["", ""]) # Use get
+        st.session_state.get('last_extract_queries', ["", ""]) 
     )
     ui_manager.display_individual_results()
 
