@@ -329,7 +329,9 @@ Docstring:
 Generates a consolidated summary with a narrative part and a TLDR section.
 Narrative is plain text with paragraphs separated by blank lines.
 TLDR section uses dash-prefixed key points, each on a new line.
+
 Optionally appends an "LLM Footnote:" after the TLDR when aggregated or historical context can meaningfully reinforce or counterbalance the summary. The footnote may be a short paragraph or a bullet list of counterpoints and can be omitted entirely if no useful context is available.
+
 ```
 
 ### def generate_search_queries(original_keywords: Tuple[str, ...], specific_info_query: Optional[str], specific_info_query_2: Optional[str], num_queries_to_generate: int, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 2500) -> Optional[List[str]]

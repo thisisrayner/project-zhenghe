@@ -22,6 +22,7 @@ and providing functionalities such as:
   if no meaningful context is available. This can be a general overview or
   focused on a specific query (Q1) with potential enrichment from a secondary
   query (Q2).
+
 - Generating alternative search queries based on initial keywords and user goals (Q1 and Q2).
 
 It incorporates caching for LLM responses to optimize performance and reduce API costs,
@@ -441,6 +442,7 @@ def generate_consolidated_summary(
     short paragraph or a bullet list of counterpoints that reinforce or
     counterbalance the summary, and it may be omitted entirely if no meaningful
     context is available.
+
     """
     # --- Function content from v1.9.9 remains unchanged ---
     if not summaries:
