@@ -108,7 +108,7 @@ else:
 
 # --- UI Rendering ---
 st.title("D.O.R.A 🔮")
-st.markdown("The **Research** **Agent** For **Domain**-Wide **Overview** and Insights.")
+st.markdown("The **Domain**-wide **Overview** For **Research** **Agent**")
 print(f"DEBUG (app.py V{config.APP_VERSION}): Main UI title rendered.") 
 
 keywords_input, num_results, llm_extract_queries_list, start_button = ui_manager.render_sidebar(
