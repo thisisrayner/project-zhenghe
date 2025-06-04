@@ -17,8 +17,12 @@ and providing functionalities such as:
   "TLDR:" section with dash-bulleted key points.
   When relevant aggregated or historical context is available, an optional
   "LLM Footnote:" may follow the TLDR section to reinforce or counterbalance
-  the summary. This can be a general overview or focused on a specific query (Q1)
-  with potential enrichment from a secondary query (Q2).
+  the summary. The footnote can be a short paragraph or a bullet list of
+  counterpoints drawn from the LLM's training data and may be omitted entirely
+  if no meaningful context is available. This can be a general overview or
+  focused on a specific query (Q1) with potential enrichment from a secondary
+  query (Q2).
+
 - Generating alternative search queries based on initial keywords and user goals (Q1 and Q2).
 
 It incorporates caching for LLM responses to optimize performance and reduce API costs,
@@ -434,8 +438,11 @@ def generate_consolidated_summary(
     Narrative is plain text with paragraphs separated by blank lines.
     TLDR section uses dash-prefixed key points, each on a new line.
     Optionally appends an "LLM Footnote:" after the TLDR list when the LLM can
-    provide meaningful historical or aggregated context that reinforces or
-    counterbalances the summary.
+    provide meaningful historical or aggregated context. The footnote can be a
+    short paragraph or a bullet list of counterpoints that reinforce or
+    counterbalance the summary, and it may be omitted entirely if no meaningful
+    context is available.
+
     """
     # --- Function content from v1.9.9 remains unchanged ---
     if not summaries:
@@ -504,9 +511,9 @@ def generate_consolidated_summary(
     )
     final_tldr_emphasis = "\n\nIMPORTANT FINAL STEP: You absolutely MUST include the 'TLDR:' section as described, with dash-prefixed key points, after the main narrative."
     llm_footnote_instruction = (
-        "\n\nIf you possess useful aggregated or historical context that can meaningfully reinforce or counterbalance the summary, "
-        "append a short section titled 'LLM Footnote:' after the TLDR list. "
-        "Keep it concise and factual. If no such context is available, omit the footnote entirely."
+        "\n\nIf you possess aggregated or historical context that can meaningfully reinforce or counterbalance the summary, "
+        "append a section titled 'LLM Footnote:' after the TLDR list. This footnote may be a short paragraph or a bullet list of counterpoints. "
+        "Keep it concise and factual, and omit the footnote entirely if no useful context is available."
     )
 
     if is_primary_focused_consolidation_active:

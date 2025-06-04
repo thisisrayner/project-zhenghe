@@ -29,7 +29,9 @@ The project is designed with a high degree of modularity, with `app.py` acting a
             *   "Additional Query 2" (Q2), if provided and relevant high-scoring snippets are found, is used by the LLM to enrich the Q1-focused narrative with more nuanced details that complement or expand upon Q1 findings.
         *   **General Overview:** If no specific information queries were used, or if no items achieved a relevancy score of 3/5 or higher for any provided specific query, a **general consolidated summary** is created from all valid individual LLM-generated item summaries. This also follows the narrative + TL;DR structure.
         *   All consolidated overviews are LLM-generated as plain text (with intentional newlines for formatting) to ensure correct rendering in the UI.
-        *   When relevant historical or aggregated context is available, the LLM appends a brief "LLM Footnote:" after the TL;DR section to reinforce or counterbalance the summary. This footnote may be omitted if no meaningful insight is found.
+
+        *   When relevant historical or aggregated context is available to reinforce or counterbalance the summary, the LLM appends an "LLM Footnote:" after the TL;DR section. The footnote can be a short paragraph or a bullet list of counterpoints to reinforce or balance the summary, and it may be omitted entirely if no meaningful insight is found.
+
 *   **Interactive UI & Results Display:**
     *   Built with Streamlit for easy input, configuration, and viewing of results and processing logs.
     *   **Visual Relevancy Cues:** Individually processed items in the results list are prefixed with visual markers based on relevancy scores for Q1 and Q2. Relevancy scores are also displayed alongside extracted information.
