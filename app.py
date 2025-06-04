@@ -1,8 +1,9 @@
 # app.py
-# Version 3.1.16:
-# - Helper text is now hidden immediately on the same re-run when the start button is clicked.
+# Version 3.1.17:
+# - Removed the unconditional horizontal line that appeared after the helper text
+#   to reduce initial clutter. The line before results display remains.
 # Previous versions:
-# - Version 3.1.15: Helper text hidden after start button click (on next re-run).
+# - Version 3.1.16: Helper text hidden immediately on start button click.
 
 """
 Streamlit Web Application for D.O.R.A - The Research Agent.
@@ -18,38 +19,32 @@ import traceback
 st.set_page_config(page_title="D.O.R.A - The Research Agent", page_icon="🔮", layout="wide")
 print(f"DEBUG (app.py V{config.APP_VERSION}): app.py execution started/re-run.") 
 
-# --- Load Application Configuration AND STORE IT IN SESSION STATE ---
-# ... (Config loading as in v3.1.15) ...
+# --- Config Loading & Session State ---
+# ... (as in v3.1.16) ...
 if 'app_config' not in st.session_state or st.session_state.app_config is None:
     st.session_state.app_config = config.load_config() 
     if st.session_state.app_config is None: st.error("CRITICAL FAILURE: config.load_config() returned None."); st.stop()
 cfg: Optional[config.AppConfig] = st.session_state.app_config
 if cfg is None: st.error("CRITICAL ERROR: cfg is None."); st.stop()
 if not hasattr(cfg, 'gsheets') or cfg.gsheets is None: st.error("CRITICAL ERROR: cfg.gsheets missing/None."); st.stop()
-
-# --- Determine and store global LLM availability status IN SESSION STATE ---
 if 'llm_globally_enabled' not in st.session_state:
     if hasattr(cfg, 'llm') and cfg.llm:
         llm_cfg_init = cfg.llm
         st.session_state.llm_globally_enabled = ((llm_cfg_init.provider == "google" and llm_cfg_init.google_gemini_api_key) or \
                                                 (llm_cfg_init.provider == "openai" and llm_cfg_init.openai_api_key))
     else: st.session_state.llm_globally_enabled = False
-
-# --- Session State Initialization (Defaults for other keys) ---
 default_session_state_keys: Dict[str, Any] = {
     'processing_log': [], 'results_data': [], 'last_keywords': "", 'last_extract_queries': ["", ""], 
     'consolidated_summary_text': None, 'focused_summary_sources': [], 'gs_worksheet': None, 
     'sheet_writing_enabled': False, 'sheet_connection_attempted_this_session': False, 
     'gsheets_error_message': None, 'initial_keywords_for_display': set(), 
     'llm_generated_keywords_set_for_display': set(), 'batch_timestamp_for_excel': None, 
-    'run_complete_status_message': None,
-    'show_initial_helper_text': True 
-}
+    'run_complete_status_message': None, 'show_initial_helper_text': True }
 for key, default_value in default_session_state_keys.items():
     if key not in st.session_state: st.session_state[key] = default_value
 
 # --- Google Sheets Setup ---
-# ... (as in v3.1.15) ...
+# ... (as in v3.1.16) ...
 gsheets_secrets_present = bool(cfg.gsheets.service_account_info and (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name))
 if not st.session_state.sheet_connection_attempted_this_session:
     st.session_state.sheet_connection_attempted_this_session = True
@@ -61,7 +56,6 @@ if not st.session_state.sheet_connection_attempted_this_session:
             else: st.session_state.gsheets_error_message = st.session_state.get("gsheets_error_message", "GSheets connection failed.")
         except Exception as e_gs_setup: st.session_state.gsheets_error_message = f"Error GSheets setup: {e_gs_setup}"
     else: st.session_state.gsheets_error_message = "GSheets not configured."
-
 
 # --- UI Rendering ---
 st.title("D.O.R.A 🔮")
@@ -75,14 +69,13 @@ keywords_input, num_results, llm_extract_queries_list, start_button = ui_manager
 )
 ui_manager.apply_custom_css() 
 
-# --- MODIFIED HELPER TEXT SECTION ---
-# Helper text is shown if the flag is True AND the start button was NOT just pressed
-# on this current script run.
+# --- HELPER TEXT SECTION (Unconditional st.markdown("---") removed from here) ---
 if st.session_state.get('show_initial_helper_text', True) and not start_button:
     st.write("") 
     st.write("Welcome to D.O.R.A.! To begin your research, please enter keywords and any specific queries in the sidebar on the left.")
-st.markdown("---") 
-# --- END MODIFIED HELPER TEXT SECTION ---
+# The st.markdown("---") that was here is now removed.
+# The next one will only appear if there are results.
+# --- END HELPER TEXT SECTION ---
 
 print(f"DEBUG (app.py V{config.APP_VERSION}): Main UI title rendered. Start button state: {start_button}, Show helper: {st.session_state.get('show_initial_helper_text', True) and not start_button}") 
 
@@ -93,9 +86,8 @@ log_container = st.container()
 # --- Main Processing Logic ---
 if start_button:
     print(f"DEBUG (app.py V{config.APP_VERSION}): 'Start Search & Analysis' button pressed.") 
-    st.session_state.show_initial_helper_text = False # Hide helper text for future re-runs
-    
-    # ... (Reset session state variables as in v3.1.15) ...
+    st.session_state.show_initial_helper_text = False 
+    # ... (Reset session state variables as in v3.1.16) ...
     st.session_state.processing_log = [f"Processing initiated at {time.strftime('%Y-%m-%d %H:%M:%S')}... (app.py V{config.APP_VERSION})"] 
     st.session_state.results_data = []
     st.session_state.consolidated_summary_text = None
@@ -111,7 +103,7 @@ if start_button:
     spinner_message = ui_manager.get_random_spinner_message()
 
     with st.spinner(spinner_message): 
-        # ... (try-except block for process_manager.run_search_and_analysis as in v3.1.15) ...
+        # ... (try-except block for process_manager.run_search_and_analysis as in v3.1.16) ...
         try:
             log, data, summary, initial_kws_display, llm_kws_display, focused_sources = process_manager.run_search_and_analysis(
                 app_config=cfg, keywords_input=keywords_input,
@@ -133,9 +125,8 @@ if start_button:
             st.session_state.processing_log = current_log_val
             st.session_state.run_complete_status_message = f"LOG_STATUS:APP_PY_CRITICAL_ERROR:{detailed_error}"
 
-
 if st.session_state.get('run_complete_status_message'):
-    # ... (Display final status message logic as in v3.1.15) ...
+    # ... (Display final status message logic as in v3.1.16) ...
     status_parts = st.session_state.run_complete_status_message.split(':', 2)
     status_type = "INFO"; status_text = st.session_state.run_complete_status_message
     if len(status_parts) > 1: status_type = status_parts[1]
@@ -147,10 +138,10 @@ if st.session_state.get('run_complete_status_message'):
     st.session_state.run_complete_status_message = None 
 
 # --- Results and Logs Display ---
-# ... (as in v3.1.15, including the conditional st.markdown("---") before results) ...
 with results_container:
     if st.session_state.get("results_data") or st.session_state.get("consolidated_summary_text"):
-        st.markdown("---") 
+        st.markdown("---") # This line appears IF there are results
+        # ... (Excel download button logic - unchanged from v3.1.16) ...
         try:
             df_item_details = excel_handler.prepare_item_details_df(st.session_state.get("results_data", []), st.session_state.get('last_extract_queries', ["", ""]))
             df_consolidated_summary_excel = None
@@ -166,14 +157,20 @@ with results_container:
             excel_file_bytes = excel_handler.to_excel_bytes(df_item_details, df_consolidated_summary_excel)
             filename_timestamp = st.session_state.get("batch_timestamp_for_excel", time.strftime('%Y%m%d%H%M%S')).replace(":", "").replace("-", "").replace(" ", "_") 
             st.download_button(label="📥 Download Results as Excel", data=excel_file_bytes, file_name=f"dora_results_{filename_timestamp}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_button_main_v3116") # Unique key
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_button_main_v3117") # Unique key
         except Exception as e_excel: st.error(f"Error preparing Excel download: {e_excel}")
 
-    ui_manager.display_consolidated_summary_and_sources(st.session_state.consolidated_summary_text, st.session_state.focused_summary_sources, st.session_state.get('last_extract_queries', ["", ""]))
+    ui_manager.display_consolidated_summary_and_sources(
+        st.session_state.consolidated_summary_text,
+        st.session_state.focused_summary_sources,
+        st.session_state.get('last_extract_queries', ["", ""])
+    )
     ui_manager.display_individual_results()
 
-with log_container: ui_manager.display_processing_log() 
-st.markdown("---") 
+with log_container:
+    ui_manager.display_processing_log() 
+
+st.markdown("---") # This is the line before the D.O.R.A version caption at the bottom
 st.caption(f"D.O.R.A v{config.APP_VERSION}") 
 print(f"DEBUG (app.py V{config.APP_VERSION}): Reached end of app.py script execution. D.O.R.A v{config.APP_VERSION}") 
 
