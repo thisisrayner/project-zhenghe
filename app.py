@@ -1,10 +1,11 @@
 # app.py
-# Version 3.1.15:
-# - Helper text is now hidden after the "Start Search & Analysis" button is clicked once.
-#   It remains hidden for the session until a page refresh.
+
+# Version 3.1.17:
+# - Removed the unconditional horizontal line that appeared after the helper text
+#   to reduce initial clutter. The line before results display remains.
 # Previous versions:
-# - Version 3.1.14: Adjusted vertical spacing around the helper text.
-# - Version 3.1.13: Removed blockquote for helper text & consolidated horizontal lines.
+# - Version 3.1.16: Helper text hidden immediately on start button click.
+
 
 """
 Streamlit Web Application for D.O.R.A - The Research Agent.
@@ -20,7 +21,10 @@ import traceback
 st.set_page_config(page_title="D.O.R.A - The Research Agent", page_icon="🔮", layout="wide")
 print(f"DEBUG (app.py V{config.APP_VERSION}): app.py execution started/re-run.") 
 
-# --- Load Application Configuration AND STORE IT IN SESSION STATE ---
+
+# --- Config Loading & Session State ---
+# ... (as in v3.1.16) ...
+
 if 'app_config' not in st.session_state or st.session_state.app_config is None:
     print(f"DEBUG (app.py V{config.APP_VERSION}): 'app_config' not in session_state or is None. Calling config.load_config().")
     st.session_state.app_config = config.load_config() 
@@ -46,20 +50,22 @@ if 'llm_globally_enabled' not in st.session_state:
 
 # --- Session State Initialization (Defaults for other keys) ---
 default_session_state_keys: Dict[str, Any] = {
-    'processing_log': [], 'results_data': [], 'last_keywords': "",
-    'last_extract_queries': ["", ""], 'consolidated_summary_text': None,
-    'focused_summary_sources': [], 'gs_worksheet': None, 'sheet_writing_enabled': False,
-    'sheet_connection_attempted_this_session': False, 'gsheets_error_message': None,
-    'initial_keywords_for_display': set(), 'llm_generated_keywords_set_for_display': set(),
-    'batch_timestamp_for_excel': None, 'run_complete_status_message': None,
-    'show_initial_helper_text': True # NEW session state variable
-}
+
+    'processing_log': [], 'results_data': [], 'last_keywords': "", 'last_extract_queries': ["", ""], 
+    'consolidated_summary_text': None, 'focused_summary_sources': [], 'gs_worksheet': None, 
+    'sheet_writing_enabled': False, 'sheet_connection_attempted_this_session': False, 
+    'gsheets_error_message': None, 'initial_keywords_for_display': set(), 
+    'llm_generated_keywords_set_for_display': set(), 'batch_timestamp_for_excel': None, 
+    'run_complete_status_message': None, 'show_initial_helper_text': True }
+
 for key, default_value in default_session_state_keys.items():
     if key not in st.session_state: st.session_state[key] = default_value
 print(f"DEBUG (app.py V{config.APP_VERSION}): Other session state keys initialized/verified.") 
 
 # --- Google Sheets Setup ---
-# ... (as in v3.1.14) ...
+
+# ... (as in v3.1.16) ...
+
 gsheets_secrets_present = bool(cfg.gsheets.service_account_info and (cfg.gsheets.spreadsheet_id or cfg.gsheets.spreadsheet_name))
 if not st.session_state.sheet_connection_attempted_this_session:
     st.session_state.sheet_connection_attempted_this_session = True
@@ -77,26 +83,25 @@ if not st.session_state.sheet_connection_attempted_this_session:
 st.title("D.O.R.A 🔮")
 st.markdown("The **Domain**-wide **Overview** For **Research** **Agent**") 
 
-# --- MODIFIED HELPER TEXT SECTION with new display condition ---
-if st.session_state.get('show_initial_helper_text', True): # Default to True if somehow not set
-    st.write("") # Adds a blank line for spacing
-    st.write("Welcome to D.O.R.A.! To begin your research, please enter keywords and any specific queries in the sidebar on the left.")
-# --- END MODIFIED HELPER TEXT SECTION ---
 
-# This horizontal line now only appears if results are being displayed (or about to be)
-# if st.session_state.get("results_data") or st.session_state.get("consolidated_summary_text"):
-#    st.markdown("---")
-# OR, if you always want a separator after the title/subtitle/helper text section:
-st.markdown("---") # This creates the line seen under the helper text in your screenshot
-
-print(f"DEBUG (app.py V{config.APP_VERSION}): Main UI title and helper text rendered.") 
-
+# Sidebar is rendered first to get the start_button state
 keywords_input, num_results, llm_extract_queries_list, start_button = ui_manager.render_sidebar(
     cfg, 
     st.session_state.gsheets_error_message, 
     st.session_state.sheet_writing_enabled
 )
 ui_manager.apply_custom_css() 
+
+# --- HELPER TEXT SECTION (Unconditional st.markdown("---") removed from here) ---
+if st.session_state.get('show_initial_helper_text', True) and not start_button:
+    st.write("") 
+    st.write("Welcome to D.O.R.A.! To begin your research, please enter keywords and any specific queries in the sidebar on the left.")
+# The st.markdown("---") that was here is now removed.
+# The next one will only appear if there are results.
+# --- END HELPER TEXT SECTION ---
+
+print(f"DEBUG (app.py V{config.APP_VERSION}): Main UI title rendered. Start button state: {start_button}, Show helper: {st.session_state.get('show_initial_helper_text', True) and not start_button}") 
+
 status_message_placeholder = st.empty() 
 results_container = st.container()
 log_container = st.container()
@@ -104,11 +109,11 @@ log_container = st.container()
 # --- Main Processing Logic ---
 if start_button:
     print(f"DEBUG (app.py V{config.APP_VERSION}): 'Start Search & Analysis' button pressed.") 
-    st.session_state.show_initial_helper_text = False # Hide helper text for subsequent re-runs in this session
-    
-    # Reset relevant session state variables for a new run
+
+    st.session_state.show_initial_helper_text = False 
+    # ... (Reset session state variables as in v3.1.16) ...
     st.session_state.processing_log = [f"Processing initiated at {time.strftime('%Y-%m-%d %H:%M:%S')}... (app.py V{config.APP_VERSION})"] 
-    # ... (other session state resets as in v3.1.14) ...
+
     st.session_state.results_data = []
     st.session_state.consolidated_summary_text = None
     st.session_state.focused_summary_sources = []
@@ -117,7 +122,6 @@ if start_button:
     st.session_state.batch_timestamp_for_excel = time.strftime('%Y-%m-%d %H:%M:%S')
     st.session_state.run_complete_status_message = None 
     
-    print(f"DEBUG (app.py V{config.APP_VERSION}): Session state for run initialized. Batch timestamp: {st.session_state.batch_timestamp_for_excel}") 
 
     st.session_state.last_keywords = keywords_input
     st.session_state.last_extract_queries = llm_extract_queries_list 
@@ -126,10 +130,11 @@ if start_button:
     print(f"DEBUG (app.py V{config.APP_VERSION}): Calling process_manager.run_search_and_analysis. Active Queries: {active_llm_extract_queries}, Num Results: {num_results}") 
     
     spinner_message = ui_manager.get_random_spinner_message()
-    print(f"DEBUG (app.py V{config.APP_VERSION}): Using spinner message: '{spinner_message}'")
+
 
     with st.spinner(spinner_message): 
-        # ... (try-except block for process_manager.run_search_and_analysis as in v3.1.14) ...
+        # ... (try-except block for process_manager.run_search_and_analysis as in v3.1.16) ...
+
         try:
             log, data, summary, initial_kws_display, llm_kws_display, focused_sources = process_manager.run_search_and_analysis(
                 app_config=cfg, keywords_input=keywords_input,
@@ -153,7 +158,9 @@ if start_button:
 
 
 if st.session_state.get('run_complete_status_message'):
-    # ... (Display final status message logic as in v3.1.14) ...
+
+    # ... (Display final status message logic as in v3.1.16) ...
+
     status_parts = st.session_state.run_complete_status_message.split(':', 2)
     status_type = "INFO"; status_text = st.session_state.run_complete_status_message
     if len(status_parts) > 1: status_type = status_parts[1]
@@ -168,8 +175,10 @@ if st.session_state.get('run_complete_status_message'):
 with results_container:
     # The st.markdown("---") here will appear if there are results to show
     if st.session_state.get("results_data") or st.session_state.get("consolidated_summary_text"):
-        st.markdown("---") 
-        # ... (Excel download button logic - unchanged from v3.1.14) ...
+
+        st.markdown("---") # This line appears IF there are results
+        # ... (Excel download button logic - unchanged from v3.1.16) ...
+
         try:
             df_item_details = excel_handler.prepare_item_details_df(st.session_state.get("results_data", []), st.session_state.get('last_extract_queries', ["", ""]))
             df_consolidated_summary_excel = None
@@ -185,7 +194,9 @@ with results_container:
             excel_file_bytes = excel_handler.to_excel_bytes(df_item_details, df_consolidated_summary_excel)
             filename_timestamp = st.session_state.get("batch_timestamp_for_excel", time.strftime('%Y%m%d%H%M%S')).replace(":", "").replace("-", "").replace(" ", "_") 
             st.download_button(label="📥 Download Results as Excel", data=excel_file_bytes, file_name=f"dora_results_{filename_timestamp}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_button_main_v3115") # Unique key
+
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_button_main_v3117") # Unique key
+
         except Exception as e_excel: st.error(f"Error preparing Excel download: {e_excel}")
 
 
@@ -199,7 +210,9 @@ with results_container:
 with log_container:
     ui_manager.display_processing_log() 
 
-st.markdown("---") 
+
+st.markdown("---") # This is the line before the D.O.R.A version caption at the bottom
+
 st.caption(f"D.O.R.A v{config.APP_VERSION}") 
 print(f"DEBUG (app.py V{config.APP_VERSION}): Reached end of app.py script execution. D.O.R.A v{config.APP_VERSION}") 
 
