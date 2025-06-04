@@ -251,8 +251,10 @@ and providing functionalities such as:
 - Generating consolidated overviews from multiple text snippets. The overview consists
   of a narrative part (plain text with proper paragraph separation) followed by a
   "TLDR:" section with dash-bulleted key points.
-  This can be a general overview or focused on a specific query (Q1) with potential
-  enrichment from a secondary query (Q2).
+  When relevant aggregated or historical context is available, an optional
+  "LLM Footnote:" may follow the TLDR section to reinforce or counterbalance
+  the summary. This can be a general overview or focused on a specific query (Q1)
+  with potential enrichment from a secondary query (Q2).
 - Generating alternative search queries based on initial keywords and user goals (Q1 and Q2).
 
 It incorporates caching for LLM responses to optimize performance and reduce API costs,
@@ -329,7 +331,9 @@ Docstring:
 Generates a consolidated summary with a narrative part and a TLDR section.
 Narrative is plain text with paragraphs separated by blank lines.
 TLDR section uses dash-prefixed key points, each on a new line.
-Optionally appends an "LLM Footnote:" after the TLDR when aggregated or historical context can meaningfully reinforce or counterbalance the summary.
+Optionally appends an "LLM Footnote:" after the TLDR list when the LLM can
+provide meaningful historical or aggregated context that reinforces or
+counterbalances the summary.
 ```
 
 ### def generate_search_queries(original_keywords: Tuple[str, ...], specific_info_query: Optional[str], specific_info_query_2: Optional[str], num_queries_to_generate: int, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 2500) -> Optional[List[str]]
