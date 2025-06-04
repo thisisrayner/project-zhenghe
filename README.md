@@ -30,7 +30,7 @@ The project is designed with a high degree of modularity, with `app.py` acting a
         *   **General Overview:** If no specific information queries were used, or if no items achieved a relevancy score of 3/5 or higher for any provided specific query, a **general consolidated summary** is created from all valid individual LLM-generated item summaries. This also follows the narrative + TL;DR structure.
         *   All consolidated overviews are LLM-generated as plain text (with intentional newlines for formatting) to ensure correct rendering in the UI.
 
-        *   When relevant historical or aggregated context is available to reinforce or counterbalance the summary, the LLM appends an "LLM Footnote:" after the TL;DR section. The footnote can be a short paragraph or a bullet list of counterpoints to reinforce or balance the summary, and it may be omitted entirely if no meaningful insight is found.
+        *   When relevant historical or aggregated context is available, the LLM appends an "LLM Footnote:" after the TL;DR section. The footnote answers three questions: what critical areas are missing from the provided sources, what additional historical or current context the LLM knows, and how the user might refine keyword searches for deeper results. It can be a short paragraph or bullet list and may be omitted entirely if no meaningful insight is found.
 
 *   **Interactive UI & Results Display:**
     *   Built with Streamlit for easy input, configuration, and viewing of results and processing logs.

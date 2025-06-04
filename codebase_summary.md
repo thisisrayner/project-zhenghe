@@ -330,7 +330,7 @@ Generates a consolidated summary with a narrative part and a TLDR section.
 Narrative is plain text with paragraphs separated by blank lines.
 TLDR section uses dash-prefixed key points, each on a new line.
 
-Optionally appends an "LLM Footnote:" after the TLDR when aggregated or historical context can meaningfully reinforce or counterbalance the summary. The footnote may be a short paragraph or a bullet list of counterpoints and can be omitted entirely if no useful context is available.
+Optionally appends an "LLM Footnote:" after the TLDR when aggregated or historical context is available. The footnote answers three questions about missing critical areas, extra context from the model, and tips for refining keyword searches. It is concise—either a paragraph or bullet list—and may be omitted entirely if no useful content exists.
 
 ```
 

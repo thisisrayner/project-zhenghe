@@ -1,8 +1,7 @@
 # modules/llm_processor.py
-# Version 1.9.10:
-# - Updated _parse_score_and_get_content with more robust regex-based parsing
-#   for relevancy scores and added debug prints.
+# Version 1.9.11: Revised footnote prompt to address missing areas, extra context, and search tips.
 # Previous versions:
+# - Version 1.9.10: Updated _parse_score_and_get_content with more robust regex-based parsing for relevancy scores and added debug prints.
 # - Version 1.9.9: Corrected narrative paragraph instruction, simplified TLDR post-processing.
 
 """
@@ -16,12 +15,14 @@ and providing functionalities such as:
   of a narrative part (plain text with proper paragraph separation) followed by a
   "TLDR:" section with dash-bulleted key points.
   When relevant aggregated or historical context is available, an optional
-  "LLM Footnote:" may follow the TLDR section to reinforce or counterbalance
-  the summary. The footnote can be a short paragraph or a bullet list of
-  counterpoints drawn from the LLM's training data and may be omitted entirely
-  if no meaningful context is available. This can be a general overview or
-  focused on a specific query (Q1) with potential enrichment from a secondary
-  query (Q2).
+  "LLM Footnote:" may follow the TLDR section. This footnote answers three
+  questions:
+  1. Which critical areas appear missing from the provided sources?
+  2. What additional historical or current context does the LLM know?
+  3. How could the user refine keyword searches for deeper results?
+  The footnote is concise—a paragraph or bullet list—and is omitted entirely
+  if no meaningful content exists. It can support a general overview or be
+  focused on a specific query (Q1) with enrichment from a secondary query (Q2).
 
 - Generating alternative search queries based on initial keywords and user goals (Q1 and Q2).
 
@@ -437,11 +438,14 @@ def generate_consolidated_summary(
     Generates a consolidated summary with a narrative part and a TLDR section.
     Narrative is plain text with paragraphs separated by blank lines.
     TLDR section uses dash-prefixed key points, each on a new line.
-    Optionally appends an "LLM Footnote:" after the TLDR list when the LLM can
-    provide meaningful historical or aggregated context. The footnote can be a
-    short paragraph or a bullet list of counterpoints that reinforce or
-    counterbalance the summary, and it may be omitted entirely if no meaningful
-    context is available.
+
+    When aggregated or historical context is available, an "LLM Footnote:" may
+    follow the TLDR. The footnote answers three questions:
+    1. Which critical areas are missing from the provided sources?
+    2. What additional historical or current context does the LLM know?
+    3. How could the user refine keyword searches for deeper results?
+    The footnote is brief—either a paragraph or bullet list—and is omitted if
+    no meaningful content exists.
 
     """
     # --- Function content from v1.9.9 remains unchanged ---
@@ -511,9 +515,10 @@ def generate_consolidated_summary(
     )
     final_tldr_emphasis = "\n\nIMPORTANT FINAL STEP: You absolutely MUST include the 'TLDR:' section as described, with dash-prefixed key points, after the main narrative."
     llm_footnote_instruction = (
-        "\n\nIf you possess aggregated or historical context that can meaningfully reinforce or counterbalance the summary, "
-        "append a section titled 'LLM Footnote:' after the TLDR list. This footnote may be a short paragraph or a bullet list of counterpoints. "
-        "Keep it concise and factual, and omit the footnote entirely if no useful context is available."
+        "\n\nIf you have valuable aggregated or historical context, append a section titled 'LLM Footnote:' after the TLDR list. "
+        "In this footnote briefly answer: (1) which critical areas seem missing from the provided sources, "
+        "(2) any additional historical or current context from your training data, and (3) how the user might refine keyword searches for deeper results. "
+        "Provide these answers in one concise paragraph or a short bullet list. Omit the entire footnote if no meaningful content exists."
     )
 
     if is_primary_focused_consolidation_active:
