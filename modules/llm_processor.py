@@ -20,7 +20,7 @@ and providing functionalities such as:
   1. Which critical areas appear missing from the provided sources?
   2. What additional historical or current context does the LLM know?
   3. How could the user refine keyword searches for deeper results?
-  The footnote is concise—a paragraph or bullet list—and is omitted entirely
+  The footnote is concise—one or two paragraphs or bullet list—and is omitted entirely
   if no meaningful content exists. It can support a general overview or be
   focused on a specific query (Q1) with enrichment from a secondary query (Q2).
 
@@ -265,7 +265,7 @@ def generate_summary(
         text_content, model_name, max_input_chars
     )
     prompt = (
-        "You are an expert assistant specializing in creating detailed and insightful summaries of web page content.\n"
+        "You are an consultant-level expert assistant specializing in creating detailed and insightful summaries of web page content.\n"
         "Analyze the following text and provide a comprehensive summary of approximately 4-6 substantial sentences (or 2-3 short paragraphs if the content is rich). "
         "Your summary should capture the core message, key arguments, supporting details, and any significant conclusions or implications. "
         "Maintain a neutral and factual tone. Your entire response for this summary MUST be in PLAIN TEXT only. Do not use any markdown formatting (e.g., no bolding, italics, headers, or lists). "
@@ -320,9 +320,10 @@ def extract_specific_information(
         "GUIDELINES FOR RELEVANCY SCORE (X/5):\n"
         "- **Relevancy Score: 5/5** - Awarded if you find 5 or more distinct pieces of information directly related to '{extraction_query}'.\n"
         "- **Relevancy Score: 4/5** - Awarded if you find exactly 4 distinct pieces of information directly related to '{extraction_query}'.\n"
-        "- **Relevancy Score: 3/5** - Awarded if you find 1, 2, or 3 distinct pieces of information directly related to '{extraction_query}'.\n"
+        "- **Relevancy Score: 3/5** - Awarded if you find 2, or 3 distinct pieces of information directly related to '{extraction_query}'.\n"
+        "- **Relevancy Score: 2/5** - Awarded if you find only 1 distinct pieces of information directly related to '{extraction_query}'.\n\n"
         "- **Relevancy Score: 1/5** - Awarded if you find NO distinct pieces of information directly related to '{extraction_query}'.\n\n"
-        f"Remember the plain text instruction for the extracted content: {plain_text_instruction_for_extraction}\n\n"
+        f"Remember the Plain Text instruction for the extracted content: {plain_text_instruction_for_extraction}\n\n"
         "--- WEB PAGE CONTENT START ---\n"
         f"{truncated_text}\n"
         "--- WEB PAGE CONTENT END ---\n\n"
@@ -439,13 +440,12 @@ def generate_consolidated_summary(
     Narrative is plain text with paragraphs separated by blank lines.
     TLDR section uses dash-prefixed key points, each on a new line.
 
-    When aggregated or historical context is available, an "LLM Footnote:" may
+    When aggregated or historical context is available in LLM training data, an "LLM Footnote:" may
     follow the TLDR. The footnote answers three questions:
-    1. Which critical areas are missing from the provided sources?
-    2. What additional historical or current context does the LLM know?
-    3. How could the user refine keyword searches for deeper results?
-    The footnote is brief—either a paragraph or bullet list—and is omitted if
-    no meaningful content exists.
+    1. Objective review: Which critical areas are missing from the provided sources that would better answer the queries?
+    2. LLM enrich: What additional historical or current context can the LLM add to enrich the analysis even further? List them if any.  
+    3. Improvement: How could the user refine keyword searches for deeper results?
+    The footnote is concise—either 1-2 paragraph or bullet list—and is omitted if no meaningful content exists.
 
     """
     # --- Function content from v1.9.9 remains unchanged ---
