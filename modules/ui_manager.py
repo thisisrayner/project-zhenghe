@@ -48,14 +48,32 @@ def get_random_spinner_message() -> str:
 
 # --- Existing Functions (Unchanged from v1.1.11) ---
 def sanitize_text_for_markdown(text: Optional[str]) -> str:
-    # ... (as in v1.1.11) ...
-    if text is None: return ""
-    escaped_text = text.replace('\\', '\\\\')
-    markdown_chars_to_escape = r"([`*_#{}\[\]()+.!-])" 
+    """Escape Markdown control characters within a text string.
+
+    Parameters
+    ----------
+    text : Optional[str]
+        The input text to sanitize. ``None`` returns an empty string.
+
+    Returns
+    -------
+    str
+        The sanitized text with backslashes prepended to the following
+        characters: ``\``, ``*``, ``_``, ``#``, ``{``, ``}``, ``[``, ``]``, ``(``,
+        ``)``, ``+``, ``.``, ``!``, ``-``, ``$``, ``>``, ``|`` and ``~``. Hyphens
+        that form list bullets at the start of a line are preserved so that TL;DR
+        sections render correctly.
+    """
+
+    if text is None:
+        return ""
+    escaped_text = text.replace("\\", "\\\\")
+    markdown_chars_to_escape = r"([`*_#{}\[\]()+.!$>|~-])"
     escaped_text = re.sub(markdown_chars_to_escape, r"\\\1", escaped_text)
-    escaped_text = re.sub(r"---", r"\-\-\-", escaped_text) 
-    escaped_text = re.sub(r"\*\*\*", r"\*\*\*", escaped_text) 
-    escaped_text = re.sub(r"___", r"\_\_\_", escaped_text) 
+    escaped_text = re.sub(r"(?m)^\\-(?=\s)", "-", escaped_text)
+    escaped_text = re.sub(r"---", r"\-\-\-", escaped_text)
+    escaped_text = re.sub(r"\*\*\*", r"\*\*\*", escaped_text)
+    escaped_text = re.sub(r"___", r"\_\_\_", escaped_text)
     return escaped_text
 
 def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]:
@@ -138,11 +156,17 @@ def display_consolidated_summary_and_sources(summary_text: Optional[str], focuse
         is_info_only_summary = "LLM_PROCESSOR_INFO:" in summary_text and not is_error_message
         primary_extract_query = last_extract_queries[0] if last_extract_queries and len(last_extract_queries) > 0 else ""
         was_focused_attempt = bool(any(q.strip() for q in last_extract_queries))
-        if is_error_message: st.error(summary_text); return 
-        elif is_info_only_summary: st.info(summary_text)
-        else: 
-            if was_focused_attempt and primary_extract_query and primary_extract_query.strip(): st.caption(f"This overview is focused on Main Query 1: '{primary_extract_query}'.")
-            with st.container(border=True): st.markdown(summary_text, unsafe_allow_html=False)
+        sanitized_summary = sanitize_text_for_markdown(summary_text)
+        if is_error_message:
+            st.error(sanitized_summary)
+            return
+        elif is_info_only_summary:
+            st.info(sanitized_summary)
+        else:
+            if was_focused_attempt and primary_extract_query and primary_extract_query.strip():
+                st.caption(f"This overview is focused on Main Query 1: '{primary_extract_query}'.")
+            with st.container(border=True):
+                st.markdown(sanitized_summary, unsafe_allow_html=False)
         if was_focused_attempt and focused_sources and not is_error_message and not is_info_only_summary:
             with st.expander("ℹ️ View Sources for Focused Consolidated Overview", expanded=False):
                 st.markdown(f"This focused overview was synthesized from **{len(focused_sources)}** high-scoring (>=3/5) extractions:")
@@ -194,8 +218,10 @@ def display_individual_results():
                 has_llm_insights = False 
                 insights_container = st.container(border=True)
                 raw_llm_summary = item_val_display.get("llm_summary")
-                if raw_llm_summary and not str(raw_llm_summary).lower().startswith(("llm error", "llm_processor", "no text content")): 
-                    has_llm_insights = True; insights_container.markdown("**Summary (LLM):**"); insights_container.markdown(raw_llm_summary)
+                if raw_llm_summary and not str(raw_llm_summary).lower().startswith(("llm error", "llm_processor", "no text content")):
+                    has_llm_insights = True
+                    insights_container.markdown("**Summary (LLM):**")
+                    insights_container.markdown(sanitize_text_for_markdown(raw_llm_summary))
                 for q_idx in range(2): 
                     query_key_text = f"llm_extraction_query_{q_idx+1}_text"
                     score_key = f"llm_relevancy_score_q{q_idx+1}"
@@ -208,9 +234,13 @@ def display_individual_results():
                     query_label_prefix = f"Main Query 1" if q_idx == 0 else f"Additional Query 2"
                     if query_text_for_label and query_text_for_label.strip() and raw_extracted_content:
                         has_llm_insights = True
-                        insights_container.markdown(f"**Extracted Info for {query_label_prefix} ('{query_text_for_label}'):**")
-                        if score_value is not None: insights_container.markdown(f"    *Relevancy Score for this item: {score_value}/5*")
-                        insights_container.markdown(raw_extracted_content)
+                        insights_container.markdown(
+                            f"**Extracted Info for {query_label_prefix} ('{query_text_for_label}'):**")
+                        if score_value is not None:
+                            insights_container.markdown(
+                                f"    *Relevancy Score for this item: {score_value}/5*")
+                        insights_container.markdown(
+                            sanitize_text_for_markdown(raw_extracted_content))
                 if not llm_globally_enabled: insights_container.caption("LLM processing disabled (no API key configured); no LLM insights could be generated.")
                 elif not has_llm_insights: insights_container.caption("No specific LLM insights (summary/extractions) generated or available for this item.")
                 st.caption(f"Item Timestamp: {item_val_display.get('timestamp')}")
