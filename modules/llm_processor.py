@@ -20,7 +20,7 @@ and providing functionalities such as:
   1. Which critical areas appear missing from the provided sources?
   2. What additional historical or current context does the LLM know?
   3. How could the user refine keyword searches for deeper results?
-  The footnote is concise—a paragraph or bullet list—and is omitted entirely
+  The footnote is concise—one or two paragraphs or bullet list—and is omitted entirely
   if no meaningful content exists. It can support a general overview or be
   focused on a specific query (Q1) with enrichment from a secondary query (Q2).
 
