@@ -442,11 +442,10 @@ def generate_consolidated_summary(
 
     When aggregated or historical context is available in LLM training data, an "LLM Footnote:" may
     follow the TLDR. The footnote answers three questions:
-    1. Objective review: Which critical areas are missing from the provided sources?
+    1. Objective review: Which critical areas are missing from the provided sources that would better answer the queries?
     2. LLM enrich: What additional historical or current context can the LLM add to enrich the analysis even further? List them if any.  
     3. Improvement: How could the user refine keyword searches for deeper results?
-    The footnote is concise—either a paragraph or bullet list—and is omitted if
-    no meaningful content exists.
+    The footnote is concise—either 1-2 paragraph or bullet list—and is omitted if no meaningful content exists.
 
     """
     # --- Function content from v1.9.9 remains unchanged ---
