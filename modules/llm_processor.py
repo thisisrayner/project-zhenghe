@@ -265,7 +265,7 @@ def generate_summary(
         text_content, model_name, max_input_chars
     )
     prompt = (
-        "You are an expert assistant specializing in creating detailed and insightful summaries of web page content.\n"
+        "You are an consultant-level expert assistant specializing in creating detailed and insightful summaries of web page content.\n"
         "Analyze the following text and provide a comprehensive summary of approximately 4-6 substantial sentences (or 2-3 short paragraphs if the content is rich). "
         "Your summary should capture the core message, key arguments, supporting details, and any significant conclusions or implications. "
         "Maintain a neutral and factual tone. Your entire response for this summary MUST be in PLAIN TEXT only. Do not use any markdown formatting (e.g., no bolding, italics, headers, or lists). "
@@ -439,12 +439,12 @@ def generate_consolidated_summary(
     Narrative is plain text with paragraphs separated by blank lines.
     TLDR section uses dash-prefixed key points, each on a new line.
 
-    When aggregated or historical context is available, an "LLM Footnote:" may
+    When aggregated or historical context is available in LLM training data, an "LLM Footnote:" may
     follow the TLDR. The footnote answers three questions:
-    1. Which critical areas are missing from the provided sources?
-    2. What additional historical or current context does the LLM know?
-    3. How could the user refine keyword searches for deeper results?
-    The footnote is brief—either a paragraph or bullet list—and is omitted if
+    1. Objective review: Which critical areas are missing from the provided sources?
+    2. LLM enrich: What additional historical or current context does the LLM know?
+    3. Improvement: How could the user refine keyword searches for deeper results?
+    The footnote is concise—either a paragraph or bullet list—and is omitted if
     no meaningful content exists.
 
     """
