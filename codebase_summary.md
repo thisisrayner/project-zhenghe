@@ -257,7 +257,7 @@ and providing functionalities such as:
   1. Which critical areas appear missing from the provided sources?
   2. What additional historical or current context does the LLM know?
   3. How could the user refine keyword searches for deeper results?
-  The footnote is concise—a paragraph or bullet list—and is omitted entirely
+  The footnote is concise—one or two paragraphs or bullet list—and is omitted entirely
   if no meaningful content exists. It can support a general overview or be
   focused on a specific query (Q1) with enrichment from a secondary query (Q2).
 
@@ -338,13 +338,12 @@ Generates a consolidated summary with a narrative part and a TLDR section.
 Narrative is plain text with paragraphs separated by blank lines.
 TLDR section uses dash-prefixed key points, each on a new line.
 
-When aggregated or historical context is available, an "LLM Footnote:" may
+When aggregated or historical context is available in LLM training data, an "LLM Footnote:" may
 follow the TLDR. The footnote answers three questions:
-1. Which critical areas are missing from the provided sources?
-2. What additional historical or current context does the LLM know?
-3. How could the user refine keyword searches for deeper results?
-The footnote is brief—either a paragraph or bullet list—and is omitted if
-no meaningful content exists.
+1. Objective review: Which critical areas are missing from the provided sources that would better answer the queries?
+2. LLM enrich: What additional historical or current context can the LLM add to enrich the analysis even further? List them if any.  
+3. Improvement: How could the user refine keyword searches for deeper results?
+The footnote is concise—either 1-2 paragraph or bullet list—and is omitted if no meaningful content exists.
 ```
 
 ### def generate_search_queries(original_keywords: Tuple[str, ...], specific_info_query: Optional[str], specific_info_query_2: Optional[str], num_queries_to_generate: int, api_key: Optional[str], model_name: str = 'models/gemini-1.5-flash-latest', max_input_chars: int = 2500) -> Optional[List[str]]
@@ -369,7 +368,23 @@ Returns a randomly selected processing message for the st.spinner.
 
 ### def sanitize_text_for_markdown(text: Optional[str]) -> str
 Docstring:
-[No docstring provided]
+```text
+Escape Markdown control characters within a text string.
+
+Parameters
+----------
+text : Optional[str]
+    The input text to sanitize. ``None`` returns an empty string.
+
+Returns
+-------
+str
+    The sanitized text with backslashes prepended to the following
+    characters: ``\``, ``*``, ``_``, ``#``, ``{``, ``}``, ``[``, ``]``, ``(``,
+    ``)``, ``+``, ``.``, ``!``, ``-``, ``$``, ``>``, ``|`` and ``~``. Hyphens
+    that form list bullets at the start of a line are preserved so that TL;DR
+    sections render correctly.
+```
 
 ### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
 Docstring:
