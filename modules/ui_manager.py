@@ -60,7 +60,10 @@ def sanitize_text_for_markdown(text: Optional[str]) -> str:
     str
         The sanitized text with backslashes prepended to the following
         characters: ``\``, ``*``, ``_``, ``#``, ``{``, ``}``, ``[``, ``]``, ``(``,
-        ``)``, ``+``, ``.``, ``!``, ``-``, ``$``, ``>``, ``|`` and ``~``.
+        ``)``, ``+``, ``.``, ``!``, ``-``, ``$``, ``>``, ``|`` and ``~``. Hyphens
+        that form list bullets at the start of a line are preserved so that TL;DR
+        sections render correctly.
+
     """
 
     if text is None:
@@ -68,6 +71,8 @@ def sanitize_text_for_markdown(text: Optional[str]) -> str:
     escaped_text = text.replace("\\", "\\\\")
     markdown_chars_to_escape = r"([`*_#{}\[\]()+.!$>|~-])"
     escaped_text = re.sub(markdown_chars_to_escape, r"\\\1", escaped_text)
+    escaped_text = re.sub(r"(?m)^\\-(?=\s)", "-", escaped_text)
+
     escaped_text = re.sub(r"---", r"\-\-\-", escaped_text)
     escaped_text = re.sub(r"\*\*\*", r"\*\*\*", escaped_text)
     escaped_text = re.sub(r"___", r"\_\_\_", escaped_text)
