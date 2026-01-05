@@ -8,131 +8,26 @@ Streamlit Web Application for D.O.R.A - The Research Agent.
 
 ---
 
-## File: modules/excel_handler.py
+## File: modules/process_manager.py
 Module Docstring:
 ```text
-Handles the creation and formatting of Excel files for exporting application results.
-
-This module provides functions to:
-1. Prepare Pandas DataFrames from processed item data and consolidated summaries.
-2. Clean string data within these DataFrames to remove illegal XML characters
-   that would prevent successful export to .xlsx format.
-3. Convert the cleaned DataFrames into a downloadable Excel file (.xlsx)
-   with separate sheets for detailed item results and the overall summary.
+Handles the main workflow of searching, scraping, LLM processing, and data aggregation.
+Provides live intermediate progress updates via Streamlit UI elements and communicates
+final processing status back via specific log messages for app.py to display.
 ```
 
-### def _clean_string_for_excel(text: Any) -> Any
-Docstring:
-```text
-Removes or replaces illegal XML characters from a string.
-
-These characters can cause errors when writing to .xlsx files with openpyxl.
-The function specifically targets control characters in the ASCII range
-0-31, excluding tab, newline, and carriage return, which are generally
-permissible.
-
-Args:
-    text: The input value. If it's a string, it will be cleaned by
-          removing illegal characters. Otherwise, it will be returned as is.
-
-Returns:
-    The cleaned string with illegal characters removed, or the original
-    value if it was not a string.
-```
-
-### def prepare_item_details_df(results_data: List[Dict[str, Any]], last_extract_queries: List[str]) -> pd.DataFrame
-Docstring:
-```text
-Prepares a Pandas DataFrame for the 'Item_Details' sheet in the Excel export.
-
-This function transforms a list of dictionaries, where each dictionary represents
-a processed item (e.g., a scraped URL with its metadata, LLM summary, and
-extracted information), into a Pandas DataFrame. It defines a standard set
-of columns and their order, populates extraction query text, and renames
-columns for better readability in the exported Excel file.
-
-The content of 'main_content_display' is assumed to be handled (e.g., truncated)
-before being passed into this function if necessary, or it will export the full content.
-
-Args:
-    results_data: A list of dictionaries, where each dictionary contains
-        the data for a single processed item. Expected keys include
-        'timestamp', 'keyword_searched', 'url', 'page_title', 
-        'llm_summary', 'llm_extracted_info_q1', 'llm_relevancy_score_q1',
-        'llm_extracted_info_q2', 'llm_relevancy_score_q2', 'main_content_display', etc.
-    last_extract_queries: A list containing the text of the extraction
-        queries used. The first element is assumed to be Q1, the second is Q2.
-        These are used to populate the 'LLM Extraction Query' columns.
-
-Returns:
-    A Pandas DataFrame where each row corresponds to a processed item and
-    columns represent various details of that item, ready for Excel export.
-```
-
-### def prepare_consolidated_summary_df(consolidated_summary_text: Optional[str], results_data_count: int, last_keywords: str, primary_llm_extract_query: Optional[str], secondary_llm_extract_query: Optional[str], batch_timestamp: str, focused_summary_source_count: Optional[int] = None) -> Optional[pd.DataFrame]
-Docstring:
-```text
-Prepares a Pandas DataFrame for the 'Consolidated_Summary' sheet.
-
-This function creates a DataFrame containing the consolidated LLM summary,
-details about the batch (timestamp, keywords, extraction queries), the number
-of source items, and a note indicating whether the summary was general or
-focused (and on which queries).
-
-Args:
-    consolidated_summary_text: The text of the consolidated summary.
-        If None, or starts with "error:", no DataFrame is created.
-    results_data_count: The total number of individual items processed in the batch.
-    last_keywords: A comma-separated string of keywords used for the batch.
-    primary_llm_extract_query: The text of the primary extraction query (Q1), if provided.
-    secondary_llm_extract_query: The text of the secondary extraction query (Q2), if provided.
-    batch_timestamp: The timestamp for the batch processing run.
-    focused_summary_source_count: If the summary was focused, this is the count
-        of items that met the criteria and were used as input. If None or 0,
-        the summary is considered general or a fallback.
-
-Returns:
-    A Pandas DataFrame with the consolidated summary details, or None if the
-    consolidated_summary_text is empty, None, or an error message.
-```
-
-### def to_excel_bytes(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes
-Docstring:
-```text
-Converts DataFrames for item details and an optional consolidated summary into Excel bytes.
-
-This function cleans string data in the DataFrames to remove illegal XML characters
-before writing them to separate sheets ('Item_Details' and 'Consolidated_Summary')
-in an Excel file. It returns the file content as a byte string, suitable for downloading.
-
-Args:
-    df_item_details: A Pandas DataFrame containing detailed information
-        for each processed item.
-    df_consolidated_summary: An optional Pandas DataFrame containing the
-        consolidated summary. If None or empty, this sheet will not be
-        added to the Excel file.
-
-Returns:
-    A byte string representing the content of the generated .xlsx Excel file.
-```
-
----
-
-## File: modules/data_storage.py
-Module Docstring:
-```text
-Handles data storage operations, primarily focused on Google Sheets integration.
-```
-
-### def get_gspread_worksheet(service_account_info: Optional[Dict[str, Any]], spreadsheet_id: Optional[str], spreadsheet_name: Optional[str], worksheet_name: str = 'Sheet1') -> Optional[gspread.Worksheet]
+### class FocusedSummarySource(TypedDict)
 Docstring:
 [No docstring provided]
 
-### def ensure_master_header(worksheet: gspread.Worksheet) -> None
+### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
 Docstring:
-[No docstring provided]
+```text
+A local, simpler parser for relevancy score as a fallback.
+Expects "Relevancy Score: X/5" at the beginning of the string.
+```
 
-### def write_batch_summary_and_items_to_sheet(worksheet: gspread.Worksheet, batch_timestamp: str, consolidated_summary: Optional[str], topic_context: str, item_data_list: List[Dict[str, Any]], extraction_queries_list: List[str], main_text_truncate_limit: int = 10000) -> bool
+### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]
 Docstring:
 [No docstring provided]
 
@@ -173,68 +68,140 @@ Returns:
 
 ---
 
-## File: modules/config.py
+## File: modules/ui_manager.py
 Module Docstring:
 ```text
-Configuration management for D.O.R.A. - The Research Agent.
-
-This module defines dataclasses for structuring configuration parameters and
-provides a function to load these configurations primarily from Streamlit
-secrets (`secrets.toml`). It handles settings for Google Search, LLM providers
-(Google Gemini, OpenAI), Google Sheets integration, application-specific
-behaviors like LLM request throttling, and defines the application's version.
+Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
 ```
 
-### class GoogleSearchConfig
+### def get_random_spinner_message() -> str
 Docstring:
 ```text
-Configuration specific to Google Custom Search API.
+Returns a randomly selected processing message for the st.spinner.
 ```
 
-### class LLMConfig
+### def sanitize_text_for_markdown(text: Optional[str]) -> str
 Docstring:
 ```text
-Configuration for Large Language Model (LLM) interactions.
+Escape Markdown control characters within a text string.
 
-Attributes:
-    provider: The LLM provider to use (e.g., "google", "openai").
-    openai_api_key: API key for OpenAI.
-    openai_model_summarize: The OpenAI model for summarization tasks.
-    openai_model_extract: The OpenAI model for extraction tasks.
-    google_gemini_api_key: API key for Google Gemini.
-    google_gemini_model: The specific Google Gemini model to use.
-    max_input_chars: Max characters to send to LLM (practical limit).
-    llm_item_request_delay_seconds: Delay in seconds to apply after each item's
-        LLM processing, if throttling is active.
-    llm_throttling_threshold_results: The number of results per keyword at or
-        above which LLM request throttling is activated.
+Parameters
+----------
+text : Optional[str]
+    The input text to sanitize. ``None`` returns an empty string.
+
+Returns
+-------
+str
+    The sanitized text with backslashes prepended to the following
+    characters: ``\``, ``*``, ``_``, ``#``, ``{``, ``}``, ``[``, ``]``, ``(``,
+    ``)``, ``+``, ``.``, ``!``, ``-``, ``$``, ``>``, ``|`` and ``~``. Hyphens
+    that form list bullets at the start of a line are preserved so that TL;DR
+    sections render correctly.
 ```
 
-### class GoogleSheetsConfig
+### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
 Docstring:
+[No docstring provided]
+
+### def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str
+Docstring:
+[No docstring provided]
+
+### def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]
+Docstring:
+[No docstring provided]
+
+### def apply_custom_css()
+Docstring:
+[No docstring provided]
+
+### def display_consolidated_summary_and_sources(summary_text: Optional[str], focused_sources: Optional[List[Dict[str, Any]]], last_extract_queries: List[str]) -> None
+Docstring:
+[No docstring provided]
+
+### def display_individual_results()
+Docstring:
+[No docstring provided]
+
+### def display_processing_log()
+Docstring:
+[No docstring provided]
+
+---
+
+## File: modules/data_storage.py
+Module Docstring:
 ```text
-Configuration for Google Sheets integration.
+Handles data storage operations, primarily focused on Google Sheets integration.
 ```
 
-### class AppConfig
+### def get_gspread_worksheet(service_account_info: Optional[Dict[str, Any]], spreadsheet_id: Optional[str], spreadsheet_name: Optional[str], worksheet_name: str = 'Sheet1') -> Optional[gspread.Worksheet]
 Docstring:
+[No docstring provided]
+
+### def ensure_master_header(worksheet: gspread.Worksheet) -> None
+Docstring:
+[No docstring provided]
+
+### def write_batch_summary_and_items_to_sheet(worksheet: gspread.Worksheet, batch_timestamp: str, consolidated_summary: Optional[str], topic_context: str, item_data_list: List[Dict[str, Any]], extraction_queries_list: List[str], main_text_truncate_limit: int = 10000) -> bool
+Docstring:
+[No docstring provided]
+
+---
+
+## File: modules/_init_.py
+Module Docstring:
+[No docstring provided]
+
+---
+
+## File: modules/scraper.py
+Module Docstring:
 ```text
-Main application configuration, aggregating other configs.
+Web scraping module for fetching and extracting content from URLs.
+
+This module uses 'requests' to fetch web page content, 'BeautifulSoup'
+for parsing HTML and extracting metadata (like title, description, OpenGraph tags),
+'trafilatura' for extracting the main textual content of an HTML article,
+and 'PyMuPDF' (fitz) for extracting text from PDF documents.
 ```
 
-### def load_config() -> Optional[AppConfig]
+### class ScrapedData(TypedDict)
 Docstring:
 ```text
-Loads application configurations from Streamlit secrets.
+A dictionary structure for storing data scraped from a web page or PDF.
+`total=False` means keys are optional and might not always be present.
+```
 
-Reads API keys, model names, sheet identifiers, throttling parameters, and other
-settings from `.streamlit/secrets.toml`. Provides sensible defaults if some
-optional settings are not found.
+### def _extract_text_from_pdf_bytes(pdf_bytes: bytes) -> tuple[Optional[str], Optional[str]]
+Docstring:
+```text
+Extracts text and title from PDF bytes using PyMuPDF (fitz).
+
+Args:
+    pdf_bytes: The byte content of the PDF file.
 
 Returns:
-    Optional[AppConfig]: An AppConfig object populated with settings,
-                         or None if essential configurations (like
-                         Google Search API keys) are missing.
+    A tuple (full_text, document_title).
+    - full_text: Concatenated text from all pages.
+    - document_title: Title from PDF metadata, if available.
+    Returns (None, None) if a significant error occurs during PDF processing.
+```
+
+### def fetch_and_extract_content(url: str, timeout: int = 15) -> ScrapedData
+Docstring:
+```text
+Fetches content from the given URL and extracts metadata and main text.
+Supports HTML and PDF documents.
+
+Args:
+    url: The URL of the web page/document to scrape.
+    timeout: The timeout in seconds for the HTTP GET request.
+
+Returns:
+    A ScrapedData dictionary containing the extracted information.
+    If an error occurs, the 'error' key in the dictionary will be populated.
 ```
 
 ---
@@ -354,146 +321,179 @@ Generates new search queries.
 
 ---
 
-## File: modules/ui_manager.py
+## File: modules/excel_handler.py
 Module Docstring:
 ```text
-Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
+Handles the creation and formatting of Excel files for exporting application results.
+
+This module provides functions to:
+1. Prepare Pandas DataFrames from processed item data and consolidated summaries.
+2. Clean string data within these DataFrames to remove illegal XML characters
+   that would prevent successful export to .xlsx format.
+3. Convert the cleaned DataFrames into a downloadable Excel file (.xlsx)
+   with separate sheets for detailed item results and the overall summary.
 ```
 
-### def get_random_spinner_message() -> str
+### def _clean_string_for_excel(text: Any) -> Any
 Docstring:
 ```text
-Returns a randomly selected processing message for the st.spinner.
-```
+Removes or replaces illegal XML characters from a string.
 
-### def sanitize_text_for_markdown(text: Optional[str]) -> str
-Docstring:
-```text
-Escape Markdown control characters within a text string.
-
-Parameters
-----------
-text : Optional[str]
-    The input text to sanitize. ``None`` returns an empty string.
-
-Returns
--------
-str
-    The sanitized text with backslashes prepended to the following
-    characters: ``\``, ``*``, ``_``, ``#``, ``{``, ``}``, ``[``, ``]``, ``(``,
-    ``)``, ``+``, ``.``, ``!``, ``-``, ``$``, ``>``, ``|`` and ``~``. Hyphens
-    that form list bullets at the start of a line are preserved so that TL;DR
-    sections render correctly.
-```
-
-### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
-Docstring:
-[No docstring provided]
-
-### def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str
-Docstring:
-[No docstring provided]
-
-### def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]
-Docstring:
-[No docstring provided]
-
-### def apply_custom_css()
-Docstring:
-[No docstring provided]
-
-### def display_consolidated_summary_and_sources(summary_text: Optional[str], focused_sources: Optional[List[Dict[str, Any]]], last_extract_queries: List[str]) -> None
-Docstring:
-[No docstring provided]
-
-### def display_individual_results()
-Docstring:
-[No docstring provided]
-
-### def display_processing_log()
-Docstring:
-[No docstring provided]
-
----
-
-## File: modules/_init_.py
-Module Docstring:
-[No docstring provided]
-
----
-
-## File: modules/scraper.py
-Module Docstring:
-```text
-Web scraping module for fetching and extracting content from URLs.
-
-This module uses 'requests' to fetch web page content, 'BeautifulSoup'
-for parsing HTML and extracting metadata (like title, description, OpenGraph tags),
-'trafilatura' for extracting the main textual content of an HTML article,
-and 'PyMuPDF' (fitz) for extracting text from PDF documents.
-```
-
-### class ScrapedData(TypedDict)
-Docstring:
-```text
-A dictionary structure for storing data scraped from a web page or PDF.
-`total=False` means keys are optional and might not always be present.
-```
-
-### def _extract_text_from_pdf_bytes(pdf_bytes: bytes) -> tuple[Optional[str], Optional[str]]
-Docstring:
-```text
-Extracts text and title from PDF bytes using PyMuPDF (fitz).
+These characters can cause errors when writing to .xlsx files with openpyxl.
+The function specifically targets control characters in the ASCII range
+0-31, excluding tab, newline, and carriage return, which are generally
+permissible.
 
 Args:
-    pdf_bytes: The byte content of the PDF file.
+    text: The input value. If it's a string, it will be cleaned by
+          removing illegal characters. Otherwise, it will be returned as is.
 
 Returns:
-    A tuple (full_text, document_title).
-    - full_text: Concatenated text from all pages.
-    - document_title: Title from PDF metadata, if available.
-    Returns (None, None) if a significant error occurs during PDF processing.
+    The cleaned string with illegal characters removed, or the original
+    value if it was not a string.
 ```
 
-### def fetch_and_extract_content(url: str, timeout: int = 15) -> ScrapedData
+### def prepare_item_details_df(results_data: List[Dict[str, Any]], last_extract_queries: List[str]) -> pd.DataFrame
 Docstring:
 ```text
-Fetches content from the given URL and extracts metadata and main text.
-Supports HTML and PDF documents.
+Prepares a Pandas DataFrame for the 'Item_Details' sheet in the Excel export.
+
+This function transforms a list of dictionaries, where each dictionary represents
+a processed item (e.g., a scraped URL with its metadata, LLM summary, and
+extracted information), into a Pandas DataFrame. It defines a standard set
+of columns and their order, populates extraction query text, and renames
+columns for better readability in the exported Excel file.
+
+The content of 'main_content_display' is assumed to be handled (e.g., truncated)
+before being passed into this function if necessary, or it will export the full content.
 
 Args:
-    url: The URL of the web page/document to scrape.
-    timeout: The timeout in seconds for the HTTP GET request.
+    results_data: A list of dictionaries, where each dictionary contains
+        the data for a single processed item. Expected keys include
+        'timestamp', 'keyword_searched', 'url', 'page_title', 
+        'llm_summary', 'llm_extracted_info_q1', 'llm_relevancy_score_q1',
+        'llm_extracted_info_q2', 'llm_relevancy_score_q2', 'main_content_display', etc.
+    last_extract_queries: A list containing the text of the extraction
+        queries used. The first element is assumed to be Q1, the second is Q2.
+        These are used to populate the 'LLM Extraction Query' columns.
 
 Returns:
-    A ScrapedData dictionary containing the extracted information.
-    If an error occurs, the 'error' key in the dictionary will be populated.
+    A Pandas DataFrame where each row corresponds to a processed item and
+    columns represent various details of that item, ready for Excel export.
+```
+
+### def prepare_consolidated_summary_df(consolidated_summary_text: Optional[str], results_data_count: int, last_keywords: str, primary_llm_extract_query: Optional[str], secondary_llm_extract_query: Optional[str], batch_timestamp: str, focused_summary_source_count: Optional[int] = None) -> Optional[pd.DataFrame]
+Docstring:
+```text
+Prepares a Pandas DataFrame for the 'Consolidated_Summary' sheet.
+
+This function creates a DataFrame containing the consolidated LLM summary,
+details about the batch (timestamp, keywords, extraction queries), the number
+of source items, and a note indicating whether the summary was general or
+focused (and on which queries).
+
+Args:
+    consolidated_summary_text: The text of the consolidated summary.
+        If None, or starts with "error:", no DataFrame is created.
+    results_data_count: The total number of individual items processed in the batch.
+    last_keywords: A comma-separated string of keywords used for the batch.
+    primary_llm_extract_query: The text of the primary extraction query (Q1), if provided.
+    secondary_llm_extract_query: The text of the secondary extraction query (Q2), if provided.
+    batch_timestamp: The timestamp for the batch processing run.
+    focused_summary_source_count: If the summary was focused, this is the count
+        of items that met the criteria and were used as input. If None or 0,
+        the summary is considered general or a fallback.
+
+Returns:
+    A Pandas DataFrame with the consolidated summary details, or None if the
+    consolidated_summary_text is empty, None, or an error message.
+```
+
+### def to_excel_bytes(df_item_details: pd.DataFrame, df_consolidated_summary: Optional[pd.DataFrame] = None) -> bytes
+Docstring:
+```text
+Converts DataFrames for item details and an optional consolidated summary into Excel bytes.
+
+This function cleans string data in the DataFrames to remove illegal XML characters
+before writing them to separate sheets ('Item_Details' and 'Consolidated_Summary')
+in an Excel file. It returns the file content as a byte string, suitable for downloading.
+
+Args:
+    df_item_details: A Pandas DataFrame containing detailed information
+        for each processed item.
+    df_consolidated_summary: An optional Pandas DataFrame containing the
+        consolidated summary. If None or empty, this sheet will not be
+        added to the Excel file.
+
+Returns:
+    A byte string representing the content of the generated .xlsx Excel file.
 ```
 
 ---
 
-## File: modules/process_manager.py
+## File: modules/config.py
 Module Docstring:
 ```text
-Handles the main workflow of searching, scraping, LLM processing, and data aggregation.
-Provides live intermediate progress updates via Streamlit UI elements and communicates
-final processing status back via specific log messages for app.py to display.
+Configuration management for D.O.R.A. - The Research Agent.
+
+This module defines dataclasses for structuring configuration parameters and
+provides a function to load these configurations primarily from Streamlit
+secrets (`secrets.toml`). It handles settings for Google Search, LLM providers
+(Google Gemini, OpenAI), Google Sheets integration, application-specific
+behaviors like LLM request throttling, and defines the application's version.
 ```
 
-### class FocusedSummarySource(TypedDict)
-Docstring:
-[No docstring provided]
-
-### def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
+### class GoogleSearchConfig
 Docstring:
 ```text
-A local, simpler parser for relevancy score as a fallback.
-Expects "Relevancy Score: X/5" at the beginning of the string.
+Configuration specific to Google Custom Search API.
 ```
 
-### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]
+### class LLMConfig
 Docstring:
-[No docstring provided]
+```text
+Configuration for Large Language Model (LLM) interactions.
+
+Attributes:
+    provider: The LLM provider to use (e.g., "google", "openai").
+    openai_api_key: API key for OpenAI.
+    openai_model_summarize: The OpenAI model for summarization tasks.
+    openai_model_extract: The OpenAI model for extraction tasks.
+    google_gemini_api_key: API key for Google Gemini.
+    google_gemini_model: The specific Google Gemini model to use.
+    max_input_chars: Max characters to send to LLM (practical limit).
+    llm_item_request_delay_seconds: Delay in seconds to apply after each item's
+        LLM processing, if throttling is active.
+    llm_throttling_threshold_results: The number of results per keyword at or
+        above which LLM request throttling is activated.
+```
+
+### class GoogleSheetsConfig
+Docstring:
+```text
+Configuration for Google Sheets integration.
+```
+
+### class AppConfig
+Docstring:
+```text
+Main application configuration, aggregating other configs.
+```
+
+### def load_config() -> Optional[AppConfig]
+Docstring:
+```text
+Loads application configurations from Streamlit secrets.
+
+Reads API keys, model names, sheet identifiers, throttling parameters, and other
+settings from `.streamlit/secrets.toml`. Provides sensible defaults if some
+optional settings are not found.
+
+Returns:
+    Optional[AppConfig]: An AppConfig object populated with settings,
+                         or None if essential configurations (like
+                         Google Search API keys) are missing.
+```
 
 ---
 
