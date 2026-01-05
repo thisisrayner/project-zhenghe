@@ -1,4 +1,5 @@
 # modules/ui_manager.py
+# Version 1.1.13: Increased max results slider to 30.
 # Version 1.1.12:
 # - Added _PROCESSING_SPINNER_MESSAGES list.
 # - Added get_random_spinner_message() function to select a random message.
@@ -114,7 +115,7 @@ def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str]
         st.subheader("Search Parameters")
         keywords_input_val: str = st.text_input("Keywords (comma-separated):", value=st.session_state.get('last_keywords', ""), key="keywords_text_input_main_sidebar_v1112", help="Enter comma-separated keywords. Press Enter to apply.")
         default_slider_val = getattr(cfg, 'num_results_per_keyword_default', 3) if cfg else 3
-        num_results_wanted_per_keyword: int = st.slider("Number of successfully scraped results per keyword:", 1, 10, default_slider_val, key="num_results_slider_sidebar_v1112")
+        num_results_wanted_per_keyword: int = st.slider("Number of successfully scraped results per keyword:", 1, 30, default_slider_val, key="num_results_slider_sidebar_v1112")
         llm_is_enabled_globally = st.session_state.get('llm_globally_enabled', False)
         llm_provider_display = "N/A"; model_display_name: str = "N/A"
         if cfg and hasattr(cfg, 'llm'):

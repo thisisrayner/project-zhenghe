@@ -1,4 +1,5 @@
 # modules/search_engine.py
+# Version 1.2.1: Implement pagination to support up to 30 results (3 API calls).
 # Version 1.2.0: Added retry mechanism with exponential backoff for API calls.
 # Handles common Google Search API rate limit errors.
 
@@ -55,68 +56,88 @@ def perform_search(
         print("ERROR (search_engine): Google API Key or CSE ID is missing.")
         return []
     
-    if num_results > 10: num_results = 10
+    if num_results > 30: num_results = 30 # Hard cap at 30 to prevent excessive API usage (approx 3 calls)
     if num_results < 1: num_results = 1
 
-    current_retry = 0
-    current_backoff_delay = initial_backoff
-
-    while current_retry <= max_retries:
-        try:
-            service = build("customsearch", "v1", developerKey=api_key)
-            result: Dict[str, Any] = service.cse().list(
-                q=query,
-                cx=cse_id,
-                num=num_results,
-                **kwargs 
-            ).execute()
-            return result.get('items', [])
+    all_results = []
+    results_fetched = 0
+    start_index = 1
+    
+    # Calculate how many calls are needed. Max 10 per call.
+    # We loop until we have enough results or we hit the limit.
+    
+    while results_fetched < num_results:
+        # Determine how many to fetch in this batch (max 10)
+        num_to_fetch_this_batch = min(10, num_results - results_fetched)
         
-        except HttpError as e:
-            # Check for common rate limit / quota errors
-            # Common status codes for rate limits: 429 (Too Many Requests), 403 (Forbidden - often for quota)
-            if e.resp.status in [429, 403]:
-                error_content = e.content.decode('utf-8').lower()
-                is_rate_limit_error = (
-                    "rate limit" in error_content or
-                    "quota exceeded" in error_content or
-                    "userrate" in error_content or # common in google api error reasons
-                    "qpd" in error_content # queries per day
-                )
-                if is_rate_limit_error and current_retry < max_retries:
+        current_retry = 0
+        current_backoff_delay = initial_backoff
+        batch_success = False
+        
+        while current_retry <= max_retries:
+            try:
+                service = build("customsearch", "v1", developerKey=api_key)
+                result: Dict[str, Any] = service.cse().list(
+                    q=query,
+                    cx=cse_id,
+                    num=num_to_fetch_this_batch,
+                    start=start_index,
+                    **kwargs 
+                ).execute()
+                
+                items = result.get('items', [])
+                all_results.extend(items)
+                results_fetched += len(items)
+                start_index += len(items)
+                batch_success = True
+                
+                # If we got fewer items than requested, it means no more results are available
+                if len(items) < num_to_fetch_this_batch:
+                    return all_results
+                
+                break # Exit retry loop on success
+            
+            except HttpError as e:
+                # ... (Logic for retries same as before) ...
+                if e.resp.status in [429, 403]:
+                    error_content = e.content.decode('utf-8').lower()
+                    is_rate_limit_error = (
+                        "rate limit" in error_content or
+                        "quota exceeded" in error_content or
+                        "userrate" in error_content or 
+                        "qpd" in error_content 
+                    )
+                    if is_rate_limit_error and current_retry < max_retries:
+                        current_retry += 1
+                        print(f"WARNING (search_engine): Google Search API rate limit hit for query '{query}'. "
+                              f"Status: {e.resp.status}. Retrying in {current_backoff_delay:.1f}s "
+                              f"(Attempt {current_retry}/{max_retries}). Error: {str(e)[:200]}")
+                        time.sleep(current_backoff_delay)
+                        current_backoff_delay = min(current_backoff_delay * 2 + random.uniform(0, 1.0), max_backoff)
+                        continue 
+                    else: 
+                        print(f"ERROR (search_engine): Google Search API call failed for query '{query}' after {current_retry} retries or non-retriable HTTP error. Status: {e.resp.status}. Error: {e}")
+                        return all_results # Return what we have so far
+                else: 
+                    print(f"ERROR (search_engine): Google Search API call failed for query '{query}' with non-retriable HTTP error. Status: {e.resp.status}. Error: {e}")
+                    return all_results # Return what we have so far
+            
+            except Exception as e: 
+                if current_retry < max_retries:
                     current_retry += 1
-                    print(f"WARNING (search_engine): Google Search API rate limit hit for query '{query}'. "
-                          f"Status: {e.resp.status}. Retrying in {current_backoff_delay:.1f}s "
-                          f"(Attempt {current_retry}/{max_retries}). Error: {str(e)[:200]}")
+                    print(f"WARNING (search_engine): Google Search API call failed for query '{query}' due to a non-HTTP error. "
+                          f"Retrying in {current_backoff_delay:.1f}s (Attempt {current_retry}/{max_retries}). Error: {e}")
                     time.sleep(current_backoff_delay)
                     current_backoff_delay = min(current_backoff_delay * 2 + random.uniform(0, 1.0), max_backoff)
-                    continue # Retry the loop
-                else: # Max retries reached for rate limit or not a recognized rate limit error within 403/429
-                    print(f"ERROR (search_engine): Google Search API call failed for query '{query}' after {current_retry} retries or non-retriable HTTP error. "
-                          f"Status: {e.resp.status}. Error: {e}")
-                    return [] # Failed after retries or non-retriable HTTP error
-            else: # Other HTTP errors not considered for retry
-                print(f"ERROR (search_engine): Google Search API call failed for query '{query}' with non-retriable HTTP error. "
-                      f"Status: {e.resp.status}. Error: {e}")
-                return []
-        
-        except Exception as e: # Catch other potential errors (network, library issues)
-            if current_retry < max_retries:
-                current_retry += 1
-                print(f"WARNING (search_engine): Google Search API call failed for query '{query}' due to a non-HTTP error. "
-                      f"Retrying in {current_backoff_delay:.1f}s (Attempt {current_retry}/{max_retries}). Error: {e}")
-                time.sleep(current_backoff_delay)
-                current_backoff_delay = min(current_backoff_delay * 2 + random.uniform(0, 1.0), max_backoff)
-                continue
-            else:
-                print(f"ERROR (search_engine): Google Search API call failed for query '{query}' after {current_retry} retries due to a non-HTTP error. Error: {e}")
-                return [] # Failed after retries
+                    continue
+                else:
+                    print(f"ERROR (search_engine): Google Search API call failed for query '{query}' after {current_retry} retries due to a non-HTTP error. Error: {e}")
+                    return all_results # Failed after retries
 
-    # This part should ideally not be reached if loop exits due to max_retries,
-    # as return [] happens inside the loop for that case.
-    # However, as a fallback:
-    print(f"ERROR (search_engine): Exited retry loop unexpectedly for query '{query}'.")
-    return []
+        if not batch_success:
+             return all_results # Stop if a batch fails completely
+
+    return all_results
 
 
 if __name__ == '__main__':

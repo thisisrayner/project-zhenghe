@@ -1,4 +1,5 @@
 # modules/process_manager.py
+# Version 1.4.12: Increased max_google_fetch_per_keyword to 30 to support pagination.
 # Version 1.4.11: Added sorting logic to deprioritise wikipedia.org results.
 # Version 1.4.10: Updated to use specific Google Gemini model for consolidation if configured.
 # - CRITICAL FIX: Ensured that the score parsed by llm_processor._parse_score_and_get_content
@@ -110,7 +111,7 @@ def run_search_and_analysis(
             num_llm_terms_to_add_for_calc = min(math.floor(num_initial_keywords_for_calc * 1.5), 5)
             for i in range(num_llm_terms_to_add_for_calc): temp_keywords_list_for_calc.append(f"llm_gen_placeholder_{i}")
         total_keywords_to_process_calc = len(set(k.lower() for k in temp_keywords_list_for_calc))
-        oversample_factor: float = 2.0; max_google_fetch_per_keyword: int = 10
+        oversample_factor: float = 2.0; max_google_fetch_per_keyword: int = 30
         urls_to_scan_per_keyword: int = min(max_google_fetch_per_keyword, int(num_results_wanted_per_keyword * oversample_factor))
         if urls_to_scan_per_keyword < num_results_wanted_per_keyword : urls_to_scan_per_keyword = num_results_wanted_per_keyword
         search_steps_calc = total_keywords_to_process_calc 
