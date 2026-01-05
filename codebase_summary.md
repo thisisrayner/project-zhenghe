@@ -30,7 +30,7 @@ A local, simpler parser for relevancy score as a fallback.
 Expects "Relevancy Score: X/5" at the beginning of the string.
 ```
 
-### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool, research_voice: str = "General") -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]
+### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]
 Docstring:
 ```text
 Orchestrates the complete D.O.R.A search and analysis workflow.
@@ -107,7 +107,7 @@ Docstring:
 Docstring:
 [No docstring provided]
 
-### def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]
+### def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool, str]
 Docstring:
 [No docstring provided]
 
@@ -502,6 +502,42 @@ Returns:
     Optional[AppConfig]: An AppConfig object populated with settings,
                          or None if essential configurations (like
                          Google Search API keys) are missing.
+```
+
+---
+
+## File: modules/usage_tracker.py
+Module Docstring:
+[No docstring provided]
+
+### def _load_stats() -> Dict[str, Any]
+Docstring:
+```text
+Loads stats from the JSON file or returns a default if it doesn't exist.
+```
+
+### def _save_stats(stats: Dict[str, Any])
+Docstring:
+```text
+Saves stats to the JSON file.
+```
+
+### def get_usage() -> int
+Docstring:
+```text
+Returns the current usage count for today.
+```
+
+### def increment_usage(amount: int = 1)
+Docstring:
+```text
+Increments the daily usage count.
+```
+
+### def get_limit() -> int
+Docstring:
+```text
+Returns the daily limit.
 ```
 
 ---
