@@ -1,5 +1,6 @@
 # modules/process_manager.py
-# Version 1.4.9:
+# Version 1.4.11: Added sorting logic to deprioritise wikipedia.org results.
+# Version 1.4.10: Updated to use specific Google Gemini model for consolidation if configured.
 # - CRITICAL FIX: Ensured that the score parsed by llm_processor._parse_score_and_get_content
 #   is correctly assigned and used, rather than being overridden by the local parser's result.
 # Previous versions:
@@ -172,6 +173,10 @@ def run_search_and_analysis(
             search_results_items_val: List[Dict[str, Any]] = search_engine.perform_search(
                 query=keyword_val, api_key=app_config.google_search.api_key, 
                 cse_id=app_config.google_search.cse_id, num_results=urls_to_scan_per_keyword)
+            
+            # Deprioritise Wikipedia: Move wikipedia.org links to the end
+            search_results_items_val.sort(key=lambda x: 1 if 'wikipedia.org' in x.get('link', '').lower() else 0)
+
             current_major_step_count += 1
             processing_log.append(f"  Found {len(search_results_items_val)} Google result(s) for '{keyword_val}'.")
             update_progress_ui(message=f"Found {len(search_results_items_val)} results for '{keyword_val}'.")
@@ -326,7 +331,12 @@ def run_search_and_analysis(
             
             final_texts_for_llm_consolidation = temp_focused_texts_for_llm
             llm_api_key_consol = app_config.llm.google_gemini_api_key if app_config.llm.provider == "google" else app_config.llm.openai_api_key
-            llm_model_consol = app_config.llm.google_gemini_model if app_config.llm.provider == "google" else app_config.llm.openai_model_summarize
+            
+            # Select model for consolidation (use specific consolidation model for Google if available)
+            if app_config.llm.provider == "google":
+                llm_model_consol = app_config.llm.google_gemini_model_consolidation if app_config.llm.google_gemini_model_consolidation else app_config.llm.google_gemini_model
+            else:
+                 llm_model_consol = app_config.llm.openai_model_summarize
             max_input_chars_consol = getattr(getattr(app_config, 'llm', object()), 'max_input_chars_consolidation', 150000) # Example
 
             if final_texts_for_llm_consolidation: # Attempt Focused Summary

@@ -1,4 +1,5 @@
 # modules/config.py
+# Version 1.5.1: Added separate configuration for Google Gemini Consolidation model.
 # Version 1.5.0: Added LLM request delay and throttling threshold configurations.
 # Version 1.4.1: Added APP_VERSION constant.
 # Version 1.4: Enhanced docstrings, type hinting, and added comments.
@@ -54,6 +55,7 @@ class LLMConfig:
     # Google Gemini specific
     google_gemini_api_key: Optional[str] = None
     google_gemini_model: str = "models/gemini-1.5-flash-latest"
+    google_gemini_model_consolidation: Optional[str] = None # Specific model for consolidation step
 
     max_input_chars: int = 100000
     # New throttling parameters
@@ -120,6 +122,9 @@ def load_config() -> Optional[AppConfig]:
         try:
             cfg.llm.google_gemini_api_key = st.secrets.get("GOOGLE_GEMINI_API_KEY")
             cfg.llm.google_gemini_model = st.secrets.get("GOOGLE_GEMINI_MODEL", cfg.llm.google_gemini_model)
+            # Load consolidation model, default to main model if not set
+            cfg.llm.google_gemini_model_consolidation = st.secrets.get("GOOGLE_GEMINI_MODEL_CONSOLIDATION", cfg.llm.google_gemini_model)
+            
             if not cfg.llm.google_gemini_api_key:
                 st.caption("LLM Provider is Google, but GOOGLE_GEMINI_API_KEY is missing. LLM features will be disabled.")
         except Exception as e:
