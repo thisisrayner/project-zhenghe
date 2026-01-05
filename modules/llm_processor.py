@@ -1,8 +1,6 @@
 # modules/llm_processor.py
-# Version 1.9.11: Revised footnote prompt to address missing areas, extra context, and search tips.
-# Previous versions:
-# - Version 1.9.10: Updated _parse_score_and_get_content with more robust regex-based parsing for relevancy scores and added debug prints.
-# - Version 1.9.9: Corrected narrative paragraph instruction, simplified TLDR post-processing.
+# Version 1.9.13: Further increased max_output_tokens (8192 for consolidation, 2048 for items) to satisfy user demand for length.
+# Version 1.9.12: Increased max_output_tokens for all LLM calls to prevent truncation.
 
 """
 Handles interactions with Large Language Models (LLMs), specifically Google Gemini.
@@ -155,7 +153,7 @@ def _call_gemini_api(
     except Exception as e_model_init:
         return f"LLM_PROCESSOR Error: Could not initialize model '{validated_model_name}': {e_model_init}"
 
-    effective_gen_config_params = {"max_output_tokens": 1024}
+    effective_gen_config_params = {"max_output_tokens": 8192}
     if generation_config_args:
         effective_gen_config_params.update(generation_config_args)
     if "temperature" not in effective_gen_config_params:
@@ -279,7 +277,7 @@ def generate_summary(
     return _call_gemini_api(
         model_name,
         [prompt],
-        generation_config_args={"max_output_tokens": 512, "temperature": 0.3},
+        generation_config_args={"max_output_tokens": 2048, "temperature": 0.3},
     )
 
 
@@ -332,7 +330,7 @@ def extract_specific_information(
     return _call_gemini_api(
         model_name,
         [prompt],
-        generation_config_args={"max_output_tokens": 750, "temperature": 0.3},
+        generation_config_args={"max_output_tokens": 2048, "temperature": 0.3},
     )
 
 
@@ -500,7 +498,7 @@ def generate_consolidated_summary(
     )
 
     prompt_instruction: str
-    max_tokens_for_call = 800
+    max_tokens_for_call = 8192
 
     narrative_plain_text_instruction = (
         "For the main narrative overview that you generate, it MUST be in PLAIN TEXT. "
@@ -543,7 +541,7 @@ def generate_consolidated_summary(
             "Focus predominantly on the central query. Avoid generic phrases. "
             f"Begin the narrative directly.{tldr_specific_instruction}{final_tldr_emphasis}{llm_footnote_instruction}\n\n"
         )
-        max_tokens_for_call = 2048
+        max_tokens_for_call = 8192
         final_topic_context_for_prompt = central_query_text
     else:  # General consolidation
         final_topic_context_for_prompt = topic_context
@@ -552,10 +550,11 @@ def generate_consolidated_summary(
             f"your task is to first create a single, coherent consolidated **narrative overview** broadly related to the topic: '{final_topic_context_for_prompt}'.\n"
             f"{narrative_plain_text_instruction}\n"
             "Identify main themes and key information. Synthesize into a cohesive narrative. "
-            "Highlight notable patterns. Present in well-structured paragraphs (2-4 substantial paragraphs)."
+            "Highlight notable patterns. A longer, more elaborate narrative (3-5 substantial paragraphs or more) is strongly preferred if the source content allows for it. "
+            "Present in well-structured paragraphs."
             f"{tldr_specific_instruction}{final_tldr_emphasis}{llm_footnote_instruction}\n\n"
         )
-        max_tokens_for_call = 1024
+        max_tokens_for_call = 8192
 
     prompt = f"{prompt_instruction}--- PROVIDED TEXTS START ---\n{truncated_combined_text}\n--- PROVIDED TEXTS END ---\n\nConsolidated Overview and TLDR (focused on '{final_topic_context_for_prompt}' if applicable):"
 

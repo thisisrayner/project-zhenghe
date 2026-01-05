@@ -1,4 +1,4 @@
-# modules/search_engine.py
+# Version 1.2.3: Comprehensive docstring updates for pagination and usage tracking.
 # Version 1.2.2: Integrated daily usage tracker.
 # Version 1.2.1: Implement pagination to support up to 30 results (3 API calls).
 # Version 1.2.0: Added retry mechanism with exponential backoff for API calls.
@@ -42,7 +42,7 @@ def perform_search(
         query: The search term(s).
         api_key: The Google API key authorized for Custom Search API.
         cse_id: The ID of the Custom Search Engine to use.
-        num_results: The number of search results to return (max 10 per API call).
+        num_results: The number of total search results to return (handles pagination up to 30).
         max_retries: Maximum number of retries for API calls.
         initial_backoff: Initial delay in seconds for the first retry.
         max_backoff: Maximum delay in seconds for a single retry.

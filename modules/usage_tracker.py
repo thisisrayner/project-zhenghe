@@ -1,5 +1,10 @@
 # modules/usage_tracker.py
-# Version 1.0.0: Initial implementation of daily usage tracking for Google API.
+# Version 1.0.1: Added comprehensive docstrings and standardized persistence logic.
+
+"""
+Handles persistent daily usage tracking for Google API calls.
+Saves usage counts to a local JSON file and resets automatically on date changes.
+"""
 
 import json
 import os
@@ -10,7 +15,15 @@ USAGE_FILE = "usage_stats.json"
 DAILY_LIMIT = 100
 
 def _load_stats() -> Dict[str, Any]:
-    """Loads stats from the JSON file or returns a default if it doesn't exist."""
+    """
+    Loads usage statistics from the local JSON storage.
+    
+    Checks the stored date; if it doesn't match the current date, 
+    the count is reset to zero.
+
+    Returns:
+        Dict: Contains 'count' (int) and 'date' (str).
+    """
     default_stats = {"count": 0, "date": str(datetime.now().date())}
     
     if not os.path.exists(USAGE_FILE):

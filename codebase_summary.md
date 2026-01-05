@@ -1,9 +1,12 @@
-# Codebase Summary (v1.3)
+# Codebase Summary (v1.4)
 
 ## File: app.py
 Module Docstring:
 ```text
 Streamlit Web Application for D.O.R.A - The Research Agent.
+
+Orchestrates the UI, session state, and high-level workflow by coordinating
+between specialized modules for search, scraping, LLM analysis, and storage.
 ```
 
 ---
@@ -27,9 +30,18 @@ A local, simpler parser for relevancy score as a fallback.
 Expects "Relevancy Score: X/5" at the beginning of the string.
 ```
 
-### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]
+### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool, research_voice: str = "General") -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]
 Docstring:
-[No docstring provided]
+```text
+Orchestrates the complete D.O.R.A search and analysis workflow.
+
+This function handles:
+1. Initial keyword expansion (optional).
+2. Google Search (with multi-page pagination and Research Voice weighting).
+3. Content scraping (HTML/PDF) and Wikipedia deprioritization.
+4. Individual item processing (Summarization and Extraction/Scoring).
+5. Final aggregation and consolidated overview (utilizing distinct Gemini models if configured).
+```
 
 ---
 
@@ -42,28 +54,14 @@ This module provides functionality to perform searches using specified
 keywords, API key, and Custom Search Engine (CSE) ID.
 It uses the google-api-python-client library and includes
 a retry mechanism for API calls to handle transient errors and rate limits.
+Now supports pagination up to 30 results.
 ```
 
 ### def perform_search(query: str, api_key: str, cse_id: str, num_results: int = 5, max_retries: int = DEFAULT_MAX_RETRIES, initial_backoff: float = DEFAULT_INITIAL_BACKOFF, max_backoff: float = DEFAULT_MAX_BACKOFF, **kwargs: Any) -> List[Dict[str, Any]]
 Docstring:
 ```text
 Performs a Google Custom Search for the given query with retry logic.
-
-Args:
-    query: The search term(s).
-    api_key: The Google API key authorized for Custom Search API.
-    cse_id: The ID of the Custom Search Engine to use.
-    num_results: The number of search results to return (max 10 per API call).
-    max_retries: Maximum number of retries for API calls.
-    initial_backoff: Initial delay in seconds for the first retry.
-    max_backoff: Maximum delay in seconds for a single retry.
-    **kwargs: Additional parameters to pass to the CSE list method,
-              e.g., siteSearch, exactTerms, etc. Refer to Google CSE API docs.
-
-Returns:
-    A list of search result item dictionaries as returned by the API.
-    Each item typically contains 'title', 'link', 'snippet', etc.
-    Returns an empty list if an error occurs after all retries or no results are found.
+Supports pagination (max 30 results) and increments usage via usage_tracker.
 ```
 
 ---
@@ -72,6 +70,7 @@ Returns:
 Module Docstring:
 ```text
 Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
+Now includes Daily Usage tracking visualization and Research Voice selection.
 ```
 
 ### def get_random_spinner_message() -> str
@@ -156,15 +155,40 @@ Module Docstring:
 
 ---
 
+## File: modules/usage_tracker.py
+Module Docstring:
+```text
+Handles persistent daily usage tracking for Google API calls.
+Saves usage counts to a local JSON file and resets automatically on date changes.
+```
+
+### def get_usage() -> int
+Docstring:
+```text
+Returns the current usage count for today.
+```
+
+### def increment_usage(amount: int = 1)
+Docstring:
+```text
+Increments the daily usage count.
+```
+
+---
+
+## File: modules/config.py
+Module Docstring:
+```text
+Configuration management for D.O.R.A. - The Research Agent.
+Includes support for multi-model Gemini configuration (Step 1-3 vs Step 4).
+```
+
+---
+
 ## File: modules/scraper.py
 Module Docstring:
 ```text
-Web scraping module for fetching and extracting content from URLs.
-
-This module uses 'requests' to fetch web page content, 'BeautifulSoup'
-for parsing HTML and extracting metadata (like title, description, OpenGraph tags),
-'trafilatura' for extracting the main textual content of an HTML article,
-and 'PyMuPDF' (fitz) for extracting text from PDF documents.
+Web scraping module for fetching and extracting content from URLs (HTML & PDF).
 ```
 
 ### class ScrapedData(TypedDict)
@@ -209,21 +233,6 @@ Returns:
 ## File: modules/llm_processor.py
 Module Docstring:
 ```text
-Handles interactions with Large Language Models (LLMs), specifically Google Gemini.
-
-This module is responsible for configuring the LLM client, making API calls,
-and providing functionalities such as:
-- Generating summaries of text content.
-- Extracting specific information based on user queries and providing relevancy scores.
-- Generating consolidated overviews from multiple text snippets. The overview consists
-  of a narrative part (plain text with proper paragraph separation) followed by a
-  "TLDR:" section with dash-bulleted key points.
-  When relevant aggregated or historical context is available, an optional
-  "LLM Footnote:" may follow the TLDR section. This footnote answers three
-  questions:
-  1. Which critical areas appear missing from the provided sources?
-  2. What additional historical or current context does the LLM know?
-  3. How could the user refine keyword searches for deeper results?
   The footnote is concise—one or two paragraphs or bullet list—and is omitted entirely
   if no meaningful content exists. It can support a general overview or be
   focused on a specific query (Q1) with enrichment from a secondary query (Q2).

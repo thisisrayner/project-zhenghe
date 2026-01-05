@@ -1,7 +1,7 @@
 # modules/config.py
+# Version 1.5.2: Comprehensive docstring updates for multi-model, usage tracking, and voices.
 # Version 1.5.1: Added separate configuration for Google Gemini Consolidation model.
 # Version 1.5.0: Added LLM request delay and throttling threshold configurations.
-# Version 1.4.1: Added APP_VERSION constant.
 # Version 1.4: Enhanced docstrings, type hinting, and added comments.
 
 """
@@ -40,7 +40,7 @@ class LLMConfig:
         openai_model_summarize: The OpenAI model for summarization tasks.
         openai_model_extract: The OpenAI model for extraction tasks.
         google_gemini_api_key: API key for Google Gemini.
-        google_gemini_model: The specific Google Gemini model to use.
+        google_gemini_model_consolidation: Optional specific Google Gemini model for Step 4.
         max_input_chars: Max characters to send to LLM (practical limit).
         llm_item_request_delay_seconds: Delay in seconds to apply after each item's
             LLM processing, if throttling is active.
@@ -55,7 +55,7 @@ class LLMConfig:
     # Google Gemini specific
     google_gemini_api_key: Optional[str] = None
     google_gemini_model: str = "models/gemini-1.5-flash-latest"
-    google_gemini_model_consolidation: Optional[str] = None # Specific model for consolidation step
+    google_gemini_model_consolidation: Optional[str] = None # Specific model for consolidation Step 4. Defaults to google_gemini_model if not set.
 
     max_input_chars: int = 100000
     # New throttling parameters
@@ -89,6 +89,11 @@ def load_config() -> Optional[AppConfig]:
     Reads API keys, model names, sheet identifiers, throttling parameters, and other
     settings from `.streamlit/secrets.toml`. Provides sensible defaults if some
     optional settings are not found.
+    
+    Notable additions in recent versions:
+    - Version 1.5.2: Updated docstrings for all recent features.
+    - Version 1.5.1: Added google_gemini_model_consolidation to LLMConfig and load_config support.
+    - Version 1.5.0: Added LLM request delay and throttling threshold configurations.
 
     Returns:
         Optional[AppConfig]: An AppConfig object populated with settings,

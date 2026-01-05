@@ -1,6 +1,6 @@
 # modules/process_manager.py
+# Version 1.4.14: Comprehensive docstring updates.
 # Version 1.4.13: Added Research Voices logic with 60/40 result splitting.
-# Version 1.4.12: Increased max_google_fetch_per_keyword to 30 to support pagination.
 # Version 1.4.11: Added sorting logic to deprioritise wikipedia.org results.
 # Version 1.4.10: Updated to use specific Google Gemini model for consolidation if configured.
 # - CRITICAL FIX: Ensured that the score parsed by llm_processor._parse_score_and_get_content
@@ -45,7 +45,7 @@ def _parse_score_from_extraction(extracted_info: Optional[str]) -> Optional[int]
     return score
 
 def run_search_and_analysis(
-    app_config: config.AppConfig, # Explicitly use AppConfig from modules.config
+    app_config: config.AppConfig,
     keywords_input: str,
     llm_extract_queries_input: List[str],
     num_results_wanted_per_keyword: int,
@@ -54,6 +54,29 @@ def run_search_and_analysis(
     gsheets_secrets_present: bool,
     research_voice: str = "General"
 ) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]:
+    """
+    Orchestrates the complete D.O.R.A search and analysis workflow.
+
+    This function handles:
+    1. Initial keyword expansion (optional).
+    2. Google Search (with multi-page pagination and Research Voice weighting).
+    3. Content scraping (HTML/PDF) and Wikipedia deprioritization.
+    4. Individual item processing (Summarization and Extraction/Scoring).
+    5. Final aggregation and consolidated overview (utilizing distinct Gemini models if configured).
+
+    Args:
+        app_config: Valid AppConfig object.
+        keywords_input: Raw string of comma-separated starting keywords.
+        llm_extract_queries_input: List of specific extraction instructions for the LLM.
+        num_results_wanted_per_keyword: The target number of successfully processed items.
+        gs_worksheet: Optional gspread worksheet for data logging.
+        sheet_writing_enabled: Flag for Google Sheets output.
+        gsheets_secrets_present: Flag for Google Sheets credentials.
+        research_voice: The "Voice" to bias results towards (e.g., 'Ground Voice' for Reddit).
+
+    Returns:
+        A tuple containing: (log_list, results_data, consolidated_summary, initial_kws, generated_kws, focused_sources).
+    """
     print("-----> DEBUG (process_manager v1.4.9): TOP OF run_search_and_analysis called.")
 
     processing_log: List[str] = ["LOG_STATUS:PROCESSING_INITIATED:Processing initiated..."]

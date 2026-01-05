@@ -1,4 +1,4 @@
-# modules/ui_manager.py
+# Version 1.1.15: Comprehensive docstring updates for Voices and Usage Tracker.
 # Version 1.1.14: Added Research Voice selection and Daily Usage Tracker UI.
 # Version 1.1.13: Increased max results slider to 30.
 # Version 1.1.12:
@@ -111,6 +111,17 @@ def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str:
     return prefix
 
 def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool, str]:
+    """
+    Renders the sidebar UI elements and handles all user input for the session.
+
+    Args:
+        cfg: The current AppConfig.
+        current_gsheets_error: Optional error string if GSheets connection failed.
+        sheet_writing_enabled: Flag indicating if GSheets logging is active.
+
+    Returns:
+        A tuple: (keywords_input, num_results, llm_extract_queries, start_button_pressed, research_voice)
+    """
     # ... (as in v1.1.11 - ensure 'config.AppConfig' type hint is valid) ...
     with st.sidebar:
         st.subheader("Search Parameters")

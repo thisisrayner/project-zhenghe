@@ -1,14 +1,14 @@
 # app.py
 
-# Version 3.1.17:
-# - Removed the unconditional horizontal line that appeared after the helper text
-#   to reduce initial clutter. The line before results display remains.
-# Previous versions:
-# - Version 3.1.16: Helper text hidden immediately on start button click.
+# Version 3.1.18: Updated docstrings for multi-model, voices, and usage tracking.
+# Version 3.1.17: Resolved indentation and logic errors in research flow.
 
 
 """
 Streamlit Web Application for D.O.R.A - The Research Agent.
+
+Orchestrates the UI, session state, and high-level workflow by coordinating
+between specialized modules for search, scraping, LLM analysis, and storage.
 """
 
 import streamlit as st
