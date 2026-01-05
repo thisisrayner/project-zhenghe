@@ -1,4 +1,4 @@
-# Codebase Summary (v1.4)
+# Codebase Summary (v1.3)
 
 ## File: app.py
 Module Docstring:
@@ -30,7 +30,7 @@ A local, simpler parser for relevancy score as a fallback.
 Expects "Relevancy Score: X/5" at the beginning of the string.
 ```
 
-### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]
+### def run_search_and_analysis(app_config: config.AppConfig, keywords_input: str, llm_extract_queries_input: List[str], num_results_wanted_per_keyword: int, gs_worksheet: Optional[Any], sheet_writing_enabled: bool, gsheets_secrets_present: bool, research_voice: str = 'General') -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]
 Docstring:
 ```text
 Orchestrates the complete D.O.R.A search and analysis workflow.
@@ -41,6 +41,19 @@ This function handles:
 3. Content scraping (HTML/PDF) and Wikipedia deprioritization.
 4. Individual item processing (Summarization and Extraction/Scoring).
 5. Final aggregation and consolidated overview (utilizing distinct Gemini models if configured).
+
+Args:
+    app_config: Valid AppConfig object.
+    keywords_input: Raw string of comma-separated starting keywords.
+    llm_extract_queries_input: List of specific extraction instructions for the LLM.
+    num_results_wanted_per_keyword: The target number of successfully processed items.
+    gs_worksheet: Optional gspread worksheet for data logging.
+    sheet_writing_enabled: Flag for Google Sheets output.
+    gsheets_secrets_present: Flag for Google Sheets credentials.
+    research_voice: The "Voice" to bias results towards (e.g., 'Ground Voice' for Reddit).
+
+Returns:
+    A tuple containing: (log_list, results_data, consolidated_summary, initial_kws, generated_kws, focused_sources).
 ```
 
 ---
@@ -54,14 +67,28 @@ This module provides functionality to perform searches using specified
 keywords, API key, and Custom Search Engine (CSE) ID.
 It uses the google-api-python-client library and includes
 a retry mechanism for API calls to handle transient errors and rate limits.
-Now supports pagination up to 30 results.
 ```
 
 ### def perform_search(query: str, api_key: str, cse_id: str, num_results: int = 5, max_retries: int = DEFAULT_MAX_RETRIES, initial_backoff: float = DEFAULT_INITIAL_BACKOFF, max_backoff: float = DEFAULT_MAX_BACKOFF, **kwargs: Any) -> List[Dict[str, Any]]
 Docstring:
 ```text
 Performs a Google Custom Search for the given query with retry logic.
-Supports pagination (max 30 results) and increments usage via usage_tracker.
+
+Args:
+    query: The search term(s).
+    api_key: The Google API key authorized for Custom Search API.
+    cse_id: The ID of the Custom Search Engine to use.
+    num_results: The number of total search results to return (handles pagination up to 30).
+    max_retries: Maximum number of retries for API calls.
+    initial_backoff: Initial delay in seconds for the first retry.
+    max_backoff: Maximum delay in seconds for a single retry.
+    **kwargs: Additional parameters to pass to the CSE list method,
+              e.g., siteSearch, exactTerms, etc. Refer to Google CSE API docs.
+
+Returns:
+    A list of search result item dictionaries as returned by the API.
+    Each item typically contains 'title', 'link', 'snippet', etc.
+    Returns an empty list if an error occurs after all retries or no results are found.
 ```
 
 ---
@@ -70,7 +97,6 @@ Supports pagination (max 30 results) and increments usage via usage_tracker.
 Module Docstring:
 ```text
 Manages the Streamlit User Interface elements, layout, and user inputs for D.O.R.A.
-Now includes Daily Usage tracking visualization and Research Voice selection.
 ```
 
 ### def get_random_spinner_message() -> str
@@ -109,7 +135,17 @@ Docstring:
 
 ### def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool, str]
 Docstring:
-[No docstring provided]
+```text
+Renders the sidebar UI elements and handles all user input for the session.
+
+Args:
+    cfg: The current AppConfig.
+    current_gsheets_error: Optional error string if GSheets connection failed.
+    sheet_writing_enabled: Flag indicating if GSheets logging is active.
+
+Returns:
+    A tuple: (keywords_input, num_results, llm_extract_queries, start_button_pressed, research_voice)
+```
 
 ### def apply_custom_css()
 Docstring:
@@ -155,40 +191,15 @@ Module Docstring:
 
 ---
 
-## File: modules/usage_tracker.py
-Module Docstring:
-```text
-Handles persistent daily usage tracking for Google API calls.
-Saves usage counts to a local JSON file and resets automatically on date changes.
-```
-
-### def get_usage() -> int
-Docstring:
-```text
-Returns the current usage count for today.
-```
-
-### def increment_usage(amount: int = 1)
-Docstring:
-```text
-Increments the daily usage count.
-```
-
----
-
-## File: modules/config.py
-Module Docstring:
-```text
-Configuration management for D.O.R.A. - The Research Agent.
-Includes support for multi-model Gemini configuration (Step 1-3 vs Step 4).
-```
-
----
-
 ## File: modules/scraper.py
 Module Docstring:
 ```text
-Web scraping module for fetching and extracting content from URLs (HTML & PDF).
+Web scraping module for fetching and extracting content from URLs.
+
+This module uses 'requests' to fetch web page content, 'BeautifulSoup'
+for parsing HTML and extracting metadata (like title, description, OpenGraph tags),
+'trafilatura' for extracting the main textual content of an HTML article,
+and 'PyMuPDF' (fitz) for extracting text from PDF documents.
 ```
 
 ### class ScrapedData(TypedDict)
@@ -233,6 +244,21 @@ Returns:
 ## File: modules/llm_processor.py
 Module Docstring:
 ```text
+Handles interactions with Large Language Models (LLMs), specifically Google Gemini.
+
+This module is responsible for configuring the LLM client, making API calls,
+and providing functionalities such as:
+- Generating summaries of text content.
+- Extracting specific information based on user queries and providing relevancy scores.
+- Generating consolidated overviews from multiple text snippets. The overview consists
+  of a narrative part (plain text with proper paragraph separation) followed by a
+  "TLDR:" section with dash-bulleted key points.
+  When relevant aggregated or historical context is available, an optional
+  "LLM Footnote:" may follow the TLDR section. This footnote answers three
+  questions:
+  1. Which critical areas appear missing from the provided sources?
+  2. What additional historical or current context does the LLM know?
+  3. How could the user refine keyword searches for deeper results?
   The footnote is concise—one or two paragraphs or bullet list—and is omitted entirely
   if no meaningful content exists. It can support a general overview or be
   focused on a specific query (Q1) with enrichment from a secondary query (Q2).
@@ -469,7 +495,7 @@ Attributes:
     openai_model_summarize: The OpenAI model for summarization tasks.
     openai_model_extract: The OpenAI model for extraction tasks.
     google_gemini_api_key: API key for Google Gemini.
-    google_gemini_model: The specific Google Gemini model to use.
+    google_gemini_model_consolidation: Optional specific Google Gemini model for Step 4.
     max_input_chars: Max characters to send to LLM (practical limit).
     llm_item_request_delay_seconds: Delay in seconds to apply after each item's
         LLM processing, if throttling is active.
@@ -498,6 +524,11 @@ Reads API keys, model names, sheet identifiers, throttling parameters, and other
 settings from `.streamlit/secrets.toml`. Provides sensible defaults if some
 optional settings are not found.
 
+Notable additions in recent versions:
+- Version 1.5.2: Updated docstrings for all recent features.
+- Version 1.5.1: Added google_gemini_model_consolidation to LLMConfig and load_config support.
+- Version 1.5.0: Added LLM request delay and throttling threshold configurations.
+
 Returns:
     Optional[AppConfig]: An AppConfig object populated with settings,
                          or None if essential configurations (like
@@ -508,12 +539,21 @@ Returns:
 
 ## File: modules/usage_tracker.py
 Module Docstring:
-[No docstring provided]
+```text
+Handles persistent daily usage tracking for Google API calls.
+Saves usage counts to a local JSON file and resets automatically on date changes.
+```
 
 ### def _load_stats() -> Dict[str, Any]
 Docstring:
 ```text
-Loads stats from the JSON file or returns a default if it doesn't exist.
+Loads usage statistics from the local JSON storage.
+
+Checks the stored date; if it doesn't match the current date, 
+the count is reset to zero.
+
+Returns:
+    Dict: Contains 'count' (int) and 'date' (str).
 ```
 
 ### def _save_stats(stats: Dict[str, Any])
