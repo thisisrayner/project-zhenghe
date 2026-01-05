@@ -1,4 +1,5 @@
 # modules/ui_manager.py
+# Version 1.1.14: Added Research Voice selection and Daily Usage Tracker UI.
 # Version 1.1.13: Increased max results slider to 30.
 # Version 1.1.12:
 # - Added _PROCESSING_SPINNER_MESSAGES list.
@@ -109,10 +110,11 @@ def get_display_prefix_for_item(item_data: Dict[str, Any]) -> str:
         elif highest_score == 3: prefix = "3️⃣"
     return prefix
 
-def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool]:
+def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str], sheet_writing_enabled: bool) -> Tuple[str, int, List[str], bool, str]:
     # ... (as in v1.1.11 - ensure 'config.AppConfig' type hint is valid) ...
     with st.sidebar:
         st.subheader("Search Parameters")
+        research_voice_val = st.selectbox("Research Voice:", ["General", "Ground Voice", "Tech Voice", "Market Voice"], index=0, help="Bias results towards specific sources (e.g., Reddit for Ground Voice).", key="research_voice_selectbox_v1114")
         keywords_input_val: str = st.text_input("Keywords (comma-separated):", value=st.session_state.get('last_keywords', ""), key="keywords_text_input_main_sidebar_v1112", help="Enter comma-separated keywords. Press Enter to apply.")
         default_slider_val = getattr(cfg, 'num_results_per_keyword_default', 3) if cfg else 3
         num_results_wanted_per_keyword: int = st.slider("Number of successfully scraped results per keyword:", 1, 30, default_slider_val, key="num_results_slider_sidebar_v1112")
@@ -144,7 +146,29 @@ def render_sidebar(cfg: 'config.AppConfig', current_gsheets_error: Optional[str]
         st.markdown("---")
         st.caption("✨ LLM-generated search queries will be used if LLM available.")
         st.caption("📄 LLM Summaries for items will be generated if LLM available.")
-    return keywords_input_val, num_results_wanted_per_keyword, returned_queries, start_button_val
+        
+        st.markdown("---")
+        # --- Usage Tracker UI ---
+        from modules import usage_tracker
+        usage = usage_tracker.get_usage()
+        limit = usage_tracker.get_limit()
+        remaining = max(0, limit - usage)
+        
+        st.subheader("Daily Usage")
+        col1, col2 = st.columns([1, 1])
+        with col1:
+             st.metric("Used", f"{usage}/{limit}")
+        with col2:
+             st.metric("Remaining", f"{remaining}")
+             
+        progress_color = "green"
+        if remaining < 10: progress_color = "red"
+        elif remaining < 30: progress_color = "orange"
+        
+        st.progress(usage / limit)
+        st.caption(f"Estimated search calls remaining today. Resets at midnight.")
+
+    return keywords_input_val, num_results_wanted_per_keyword, returned_queries, start_button_val, research_voice_val
 
 def apply_custom_css():
     # ... (as in v1.1.11) ...

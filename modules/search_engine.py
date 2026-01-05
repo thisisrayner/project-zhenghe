@@ -1,4 +1,5 @@
 # modules/search_engine.py
+# Version 1.2.2: Integrated daily usage tracker.
 # Version 1.2.1: Implement pagination to support up to 30 results (3 API calls).
 # Version 1.2.0: Added retry mechanism with exponential backoff for API calls.
 # Handles common Google Search API rate limit errors.
@@ -17,6 +18,7 @@ from googleapiclient.errors import HttpError
 from typing import List, Dict, Any
 import time
 import random
+from modules import usage_tracker
 
 # Default retry parameters
 DEFAULT_MAX_RETRIES = 3
@@ -84,6 +86,9 @@ def perform_search(
                     start=start_index,
                     **kwargs 
                 ).execute()
+                
+                # Track usage
+                usage_tracker.increment_usage(1)
                 
                 items = result.get('items', [])
                 all_results.extend(items)

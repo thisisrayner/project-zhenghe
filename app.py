@@ -85,7 +85,7 @@ st.markdown("The **Domain**-wide **Overview** For **Research** **Agent**")
 
 
 # Sidebar is rendered first to get the start_button state
-keywords_input, num_results, llm_extract_queries_list, start_button = ui_manager.render_sidebar(
+keywords_input, num_results, llm_extract_queries_list, start_button, research_voice = ui_manager.render_sidebar(
     cfg, 
     st.session_state.gsheets_error_message, 
     st.session_state.sheet_writing_enabled
@@ -121,7 +121,6 @@ if start_button:
     st.session_state.llm_generated_keywords_set_for_display = set()
     st.session_state.batch_timestamp_for_excel = time.strftime('%Y-%m-%d %H:%M:%S')
     st.session_state.run_complete_status_message = None 
-    
 
     st.session_state.last_keywords = keywords_input
     st.session_state.last_extract_queries = llm_extract_queries_list 
@@ -131,16 +130,14 @@ if start_button:
     
     spinner_message = ui_manager.get_random_spinner_message()
 
-
     with st.spinner(spinner_message): 
-        # ... (try-except block for process_manager.run_search_and_analysis as in v3.1.16) ...
-
         try:
             log, data, summary, initial_kws_display, llm_kws_display, focused_sources = process_manager.run_search_and_analysis(
                 app_config=cfg, keywords_input=keywords_input,
                 llm_extract_queries_input=active_llm_extract_queries, num_results_wanted_per_keyword=num_results,
                 gs_worksheet=st.session_state.gs_worksheet, sheet_writing_enabled=st.session_state.sheet_writing_enabled,
-                gsheets_secrets_present=gsheets_secrets_present)
+                gsheets_secrets_present=gsheets_secrets_present,
+                research_voice=research_voice)
             st.session_state.processing_log = log; st.session_state.results_data = data
             st.session_state.consolidated_summary_text = summary; st.session_state.focused_summary_sources = focused_sources
             st.session_state.initial_keywords_for_display = initial_kws_display; st.session_state.llm_generated_keywords_set_for_display = llm_kws_display

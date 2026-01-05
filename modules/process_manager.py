@@ -1,4 +1,5 @@
 # modules/process_manager.py
+# Version 1.4.13: Added Research Voices logic with 60/40 result splitting.
 # Version 1.4.12: Increased max_google_fetch_per_keyword to 30 to support pagination.
 # Version 1.4.11: Added sorting logic to deprioritise wikipedia.org results.
 # Version 1.4.10: Updated to use specific Google Gemini model for consolidation if configured.
@@ -50,7 +51,8 @@ def run_search_and_analysis(
     num_results_wanted_per_keyword: int,
     gs_worksheet: Optional[Any],
     sheet_writing_enabled: bool,
-    gsheets_secrets_present: bool
+    gsheets_secrets_present: bool,
+    research_voice: str = "General"
 ) -> Tuple[List[str], List[Dict[str, Any]], Optional[str], Set[str], Set[str], List[FocusedSummarySource]]:
     print("-----> DEBUG (process_manager v1.4.9): TOP OF run_search_and_analysis called.")
 
@@ -171,9 +173,50 @@ def run_search_and_analysis(
                 current_major_step_count += 1 + urls_to_scan_per_keyword + (num_results_wanted_per_keyword * llm_tasks_per_good_item_calc)
                 update_progress_ui(); continue
             
-            search_results_items_val: List[Dict[str, Any]] = search_engine.perform_search(
-                query=keyword_val, api_key=app_config.google_search.api_key, 
-                cse_id=app_config.google_search.cse_id, num_results=urls_to_scan_per_keyword)
+            # --- Research Voice Logic: Split into Filtered and General buckets ---
+            search_results_items_val: List[Dict[str, Any]] = []
+            
+            # Voice Definitions
+            voice_filters = {
+                "Ground Voice": "site:reddit.com",
+                "Tech Voice": "(site:github.com OR site:stackoverflow.com OR site:hackernews.com OR site:techcrunch.com OR site:medium.com)",
+                "Market Voice": "(site:bloomberg.com OR site:mckinsey.com OR site:gartner.com OR site:reuters.com OR site:forbes.com)"
+            }
+
+            if research_voice in voice_filters and research_voice != "General":
+                # 60% Filtered, 40% General
+                num_filtered = math.ceil(urls_to_scan_per_keyword * 0.6)
+                num_general = urls_to_scan_per_keyword - num_filtered
+                
+                # 1. Filtered Search
+                filtered_query = f"{keyword_val} {voice_filters[research_voice]}"
+                filtered_results = search_engine.perform_search(
+                    query=filtered_query, api_key=app_config.google_search.api_key, 
+                    cse_id=app_config.google_search.cse_id, num_results=num_filtered)
+                
+                # 2. General Search
+                general_results = search_engine.perform_search(
+                    query=keyword_val, api_key=app_config.google_search.api_key, 
+                    cse_id=app_config.google_search.cse_id, num_results=num_general)
+                
+                # Combine (Filtered first to prioritize them)
+                search_results_items_val = filtered_results + general_results
+                
+                # Deduplicate by URL
+                seen_urls = set()
+                unique_results = []
+                for res in search_results_items_val:
+                    u = res.get('link')
+                    if u not in seen_urls:
+                        unique_results.append(res)
+                        seen_urls.add(u)
+                search_results_items_val = unique_results
+
+            else:
+                # Standard General Search
+                search_results_items_val = search_engine.perform_search(
+                    query=keyword_val, api_key=app_config.google_search.api_key, 
+                    cse_id=app_config.google_search.cse_id, num_results=urls_to_scan_per_keyword)
             
             # Deprioritise Wikipedia: Move wikipedia.org links to the end
             search_results_items_val.sort(key=lambda x: 1 if 'wikipedia.org' in x.get('link', '').lower() else 0)
